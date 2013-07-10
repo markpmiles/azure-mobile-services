@@ -708,7 +708,7 @@
 				GCC_PREFIX_HEADER = "src/WindowsAzureMobileServices-Prefix.pch";
 				OTHER_LDFLAGS = "-ObjC";
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				PUBLIC_HEADERS_FOLDER_PATH = headers;
+				PUBLIC_HEADERS_FOLDER_PATH = "include/$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRIP_STYLE = "non-global";
 				VERSIONING_SYSTEM = "apple-generic";
@@ -727,7 +727,7 @@
 				GCC_PREFIX_HEADER = "src/WindowsAzureMobileServices-Prefix.pch";
 				OTHER_LDFLAGS = "-ObjC";
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				PUBLIC_HEADERS_FOLDER_PATH = headers;
+				PUBLIC_HEADERS_FOLDER_PATH = "include/$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRIP_STYLE = "non-global";
 				VERSIONING_SYSTEM = "apple-generic";
