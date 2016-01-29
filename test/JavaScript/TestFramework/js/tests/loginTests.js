@@ -5,8 +5,6 @@
 /// <reference path="../../../ZumoE2ETestAppJs/ZumoE2ETestAppJs/js/MobileServices.js" />
 /// <reference path="/LiveSDKHTML/js/wl.js" />
 /// <reference path="../testFramework.js" />
-/// <reference path="//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js" />
-
 
 function defineLoginTestsNamespace() {
     var tests = [];
@@ -15,10 +13,10 @@ function defineLoginTestsNamespace() {
     var TABLE_PERMISSION_APPLICATION = 2;
     var TABLE_PERMISSION_USER = 3;
     var TABLE_PERMISSION_ADMIN = 4;
-    var TABLE_NAME_PUBLIC = 'w8Public';
-    var TABLE_NAME_APPLICATION = 'w8Application';
-    var TABLE_NAME_AUTHENTICATED = 'w8Authenticated';
-    var TABLE_NAME_ADMIN = 'w8Admin';
+    var TABLE_NAME_PUBLIC = 'public';
+    var TABLE_NAME_APPLICATION = 'application';
+    var TABLE_NAME_AUTHENTICATED = 'authenticated';
+    var TABLE_NAME_ADMIN = 'admin';
 
     var tables = [
         { name: TABLE_NAME_PUBLIC, permission: TABLE_PERMISSION_PUBLIC },
@@ -28,19 +26,20 @@ function defineLoginTestsNamespace() {
 
     var supportRecycledToken = {
         facebook: true,
-        google: true,
+        google: false, // Known bug - Drop login via Google token until Google client flow is reintroduced
         twitter: false,
         microsoftaccount: false
     };
 
     tests.push(createLogoutTest());
 
-    jQuery.each(tables, function (index, table) {
+    var index, table;
+    for (index = 0; index < tables.length; index++) {
+        table = tables[index];
         tests.push(createCRUDTest(table.name, null, table.permission, false));
-    });
+    }
 
-
-
+    var indexOfTestsWithAuthentication = tests.length;
 
     var lastUserIdentityObject = null;
 
@@ -50,11 +49,12 @@ function defineLoginTestsNamespace() {
         tests.push(createLogoutTest());
         tests.push(createLoginTest(provider));
 
-        jQuery.each(tables, function (index, table) {
+        for (index = 0; index < tables.length; index++) {
+            table = tables[index];
             if (table.permission !== TABLE_PERMISSION_PUBLIC) {
                 tests.push(createCRUDTest(table.name, provider, table.permission, true));
             }
-        });
+        }
 
         if (supportRecycledToken[provider]) {
             tests.push(createLogoutTest());
@@ -79,6 +79,11 @@ function defineLoginTestsNamespace() {
             }
         });
     }
+
+    for (var i = indexOfTestsWithAuthentication; i < tests.length; i++) {
+        tests[i].canRunUnattended = false;
+    }
+
     function createLiveSDKLoginTest() {
         var liveSDKInitialized = false;
         return new zumo.Test('Login via token with the Live SDK', function (test, done) {
@@ -162,7 +167,7 @@ function defineLoginTestsNamespace() {
             var client = zumo.getClient();
             var table = client.getTable(tableName);
             var currentUser = client.currentUser;
-            var item = { text: 'hello' };
+            var item = { name: 'hello' };
             var insertedItem;
 
             var validateCRUDResult = function (operation, error) {
@@ -178,12 +183,19 @@ function defineLoginTestsNamespace() {
                     if (error) {
                         var xhr = error.request;
                         if (xhr) {
-                            if (xhr.status == 401) {
-                                test.addLog('Got expected response code (401) for ', operation);
+                            var isInternetExplorer10 = testPlatform.IsHTMLApplication && window.ActiveXObject && window.navigator.userAgent.toLowerCase().match(/msie ([\d.]+)/)[1] == "10.0";
+                            // IE 10 has a bug in which it doesn't set the status code correctly - https://connect.microsoft.com/IE/feedback/details/785990
+                            // so we cannot validate the status code if this is the case.
+                            if (isInternetExplorer10) {
                                 result = true;
                             } else {
-                                zumo.util.traceResponse(test, xhr);
-                                test.addLog('Error, incorrect response.');
+                                if (xhr.status == 401) {
+                                    test.addLog('Got expected response code (401) for ', operation);
+                                    result = true;
+                                } else {
+                                    zumo.util.traceResponse(test, xhr);
+                                    test.addLog('Error, incorrect response.');
+                                }
                             }
                         } else {
                             test.addLog('Error, error object does not have a \'request\' (for the XMLHttpRequest object) property.');
@@ -227,9 +239,31 @@ function defineLoginTestsNamespace() {
                             test.addLog('Error, query should have returned exactly one item');
                             done(false);
                         } else {
-                            if (items[0].Identities) {
+                            var retrievedItem = items[0];
+                            var usersFeatureEnabled = retrievedItem.UsersEnabled;
+                            if (retrievedItem.Identities) {
                                 lastUserIdentityObject = JSON.parse(items[0].Identities);
                                 test.addLog('Identities object: ', lastUserIdentityObject);
+                                var providerName = provider;
+                                if (providerName.toLowerCase() === 'microsoftaccount') {
+                                    providerName = 'microsoft';
+                                }
+                                var providerIdentity = lastUserIdentityObject[providerName];
+                                if (!providerIdentity) {
+                                    test.addLog('Error, cannot fetch the identity for provider ', providerName);
+                                    done(false);
+                                    return;
+                                }
+                                if (usersFeatureEnabled) {
+                                    var userName = providerIdentity.name || providerIdentity.screen_name;
+                                    if (userName) {
+                                        test.addLog('Found user name: ', userName);
+                                    } else {
+                                        test.addLog('Could not find user name!');
+                                        done(false);
+                                        return;
+                                    }
+                                }
                             }
                             readCallback();
                         }

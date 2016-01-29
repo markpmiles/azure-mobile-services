@@ -52,7 +52,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
-            <TextBlock Grid.Row="0" Style="{StaticResource SubheaderStyle}">Windows Azure Mobile Services</TextBlock>
+            <TextBlock Grid.Row="0" Style="{StaticResource SubheaderStyle}">Microsoft Azure Mobile Services</TextBlock>
             <TextBlock Grid.Row="1"  Style="{StaticResource HeaderStyle}">C# Client Library Tests</TextBlock>
             <Border Grid.Row="2" Style="{StaticResource DialogStyle}">
                 <Grid>
@@ -61,6 +61,7 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -96,15 +97,27 @@
                         Content="Google" 
                         Style="{StaticResource ButtonStyleRight}"
                         Click="LoginButtonClicked"/>
-                    <CheckBox
+                    <Button
                         Grid.Row="2"
                         Grid.Column="0"
-                        Grid.ColumnSpan="2"
+                        x:Name="AzureActiveDirectoryButton"
+                        Content="Azure Active Directory"
+                        Style="{StaticResource ButtonStyleLeft}"
+                        Click="LoginButtonClicked"/>
+                    <CheckBox
+                        Grid.Row="3"
+                        Grid.Column="0"
                         x:Name="UseSingleSignOnCheckBox"
                         Content="Use Single Sign-On"
                         IsChecked="true" Margin="0,10"/>
-                    <TextBlock 
+                    <CheckBox
                         Grid.Row="3"
+                        Grid.Column="1"
+                        x:Name="UseStringProviderOverloadCheckBox"
+                        Content="Use overload with string provider"
+                        IsChecked="False" Margin="0,10"/>
+                    <TextBlock 
+                        Grid.Row="4"
                         Grid.Column="0"
                         Grid.ColumnSpan="2"
             	        HorizontalAlignment="Left" 
@@ -116,7 +129,7 @@
                         FontSize="15">
                     </TextBlock>
                     <TextBlock
-                        Grid.Row="4"
+                        Grid.Row="5"
                         Grid.Column="0"
                         Grid.ColumnSpan="2"
                         x:Name="TestResultsTextBlock"

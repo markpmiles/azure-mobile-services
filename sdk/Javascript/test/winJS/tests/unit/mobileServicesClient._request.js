@@ -122,17 +122,20 @@ $testGroup('MobileServiceClient._request',
         return Platform.async(client._request).call(client, 'POST', 'foo', null);
     }),
 
-    $test('X-ZUMO-VERSION header')
+    $test('VersionHeader')
     .description('Verify WebRequest.requestAsync provides an X-ZUMO-VERSION header')
     .checkAsync(function () {
         var client = new WindowsAzure.MobileServiceClient("http://www.windowsazure.com/", "123456abcdefg");
         client = client.withFilter(function (req, next, callback) {
-            var isWinJs = typeof Windows === "object";
+            var isWinJs = typeof Windows === "object",
+                isCordova = window && window.cordova && window.cordova.version;
+
             if (isWinJs) {
-                $assert.areEqual(req.headers['X-ZUMO-VERSION'], "ZUMO/1.0 (lang=WinJS; os=Windows 8; os_version=--; arch=Neutral; version=1.0.0.0)");
-            }
-            else {
-                $assert.areEqual(req.headers['X-ZUMO-VERSION'], "ZUMO/1.0 (lang=Web; os=--; os_version=--; arch=--; version=1.0.0.0)");
+                $assert.areEqual(0, req.headers['X-ZUMO-VERSION'].indexOf("ZUMO/1.2 (lang=WinJS; os=Windows 8; os_version=--; arch=Neutral; version="));
+            } else if (isCordova) {
+                $assert.areEqual(0, req.headers['X-ZUMO-VERSION'].indexOf("ZUMO/1.2 (lang=Cordova; os=--; os_version=--; arch=--; version="));
+            } else {
+                $assert.areEqual(0, req.headers['X-ZUMO-VERSION'].indexOf("ZUMO/1.2 (lang=Web; os=--; os_version=--; arch=--; version="));
             }
             callback(null, { status: 200, responseText: null });
         });

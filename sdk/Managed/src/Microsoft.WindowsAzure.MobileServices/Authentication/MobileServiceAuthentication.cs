@@ -3,6 +3,7 @@
 // ----------------------------------------------------------------------------
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
@@ -31,25 +32,46 @@ namespace Microsoft.WindowsAzure.MobileServices
         protected const string LoginAsyncDoneUriFragment = "login/done";
 
         /// <summary>
+        /// Name of the authentication provider as expected by the service REST API.
+        /// </summary>
+        private string providerName;
+
+        /// <summary>
+        /// The name for the Azure Active Directory authentication provider as used by the
+        /// service REST API.
+        /// </summary>
+        internal const string WindowsAzureActiveDirectoryRestApiPathName = "aad";
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="MobileServiceAuthentication"/> class.
         /// </summary>
         /// <param name="client">
         /// The <see cref="MobileServiceClient"/> associated with this 
         /// MobileServiceLogin instance.
         /// </param>
-        /// <param name="provider">
+        /// <param name="providerName">
         /// The <see cref="MobileServiceAuthenticationProvider"/> used to authenticate.
         /// </param>
-        public MobileServiceAuthentication(IMobileServiceClient client, MobileServiceAuthenticationProvider provider)
+        /// <param name="parameters">
+        /// Provider specific extra parameters that are sent as query string parameters to login endpoint.
+        /// </param>
+        public MobileServiceAuthentication(IMobileServiceClient client, string providerName, IDictionary<string, string> parameters)
         {
             Debug.Assert(client != null, "client should not be null.");
+            if (providerName == null)
+            {
+                throw new ArgumentNullException("providerName");
+            }
 
             this.Client = client;
-            this.Provider = provider;
+            this.Parameters = parameters;
+            this.ProviderName = providerName;
 
-            string providerName = this.Provider.ToString().ToLower();
+            string path = MobileServiceUrlBuilder.CombinePaths(LoginAsyncUriFragment, this.ProviderName);
+            string queryString = MobileServiceUrlBuilder.GetQueryString(parameters, useTableAPIRules: false);
+            string pathAndQuery = MobileServiceUrlBuilder.CombinePathAndQuery(path, queryString);
 
-            this.StartUri = new Uri(this.Client.ApplicationUri, MobileServiceAuthentication.LoginAsyncUriFragment + "/" + providerName);
+            this.StartUri = new Uri(this.Client.ApplicationUri, pathAndQuery);
             this.EndUri = new Uri(this.Client.ApplicationUri, MobileServiceAuthentication.LoginAsyncDoneUriFragment);
         }
 
@@ -60,16 +82,33 @@ namespace Microsoft.WindowsAzure.MobileServices
         protected IMobileServiceClient Client { get; private set; }
 
         /// <summary>
-        /// Indicates whether a login operation is currently in progress.
+        /// The name of the authentication provider used by this
+        /// <see cref="MobileServiceAuthentication"/> instance.
         /// </summary>
-        protected MobileServiceAuthenticationProvider Provider { get; private set; }
+        internal string ProviderName
+        {
+            get { return this.providerName; }
+            private set
+            {
+                this.providerName = value.ToLowerInvariant();
+                if (this.providerName.Equals(MobileServiceAuthenticationProvider.WindowsAzureActiveDirectory.ToString(), StringComparison.OrdinalIgnoreCase))
+                {
+                    this.providerName = WindowsAzureActiveDirectoryRestApiPathName;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Provider specific extra parameters that are sent as query string parameters to login endpoint.
+        /// </summary>
+        internal IDictionary<string, string> Parameters { get; private set; }
 
         /// <summary>
         /// The start uri to use for authentication.
         /// The browser-based control should 
         /// first navigate to this Uri in order to start the authenication flow.
         /// </summary>
-        protected Uri StartUri { get; private set; }
+        internal Uri StartUri { get; private set; }
 
         /// <summary>
         /// The end Uri to use for authentication.
@@ -78,22 +117,17 @@ namespace Microsoft.WindowsAzure.MobileServices
         /// endUrl, the browser-based control must stop navigating and
         /// return the response data.
         /// </summary>
-        protected Uri EndUri { get; private set; }
+        internal Uri EndUri { get; private set; }
 
         /// <summary>
-        /// Log a user into a Mobile Services application given a provider name and 
-        /// optional token object.
+        /// Log a user into a Mobile Services application with the provider name and
+        /// optional token object from this instance.
         /// </summary>
         /// <returns>
         /// Task that will complete when the user has finished authentication.
         /// </returns>
         internal async Task<MobileServiceUser> LoginAsync()
         {
-            if (!Enum.IsDefined(typeof(MobileServiceAuthenticationProvider), Provider))
-            {
-                throw new ArgumentOutOfRangeException("provider");
-            }
-
             string response = await this.LoginAsyncOverride();
             if (!string.IsNullOrEmpty(response))
             {
@@ -106,7 +140,7 @@ namespace Microsoft.WindowsAzure.MobileServices
 
             return this.Client.CurrentUser;
         }
-        
+
         /// <summary>
         /// Provides Login logic.
         /// </summary>

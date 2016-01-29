@@ -4,8 +4,8 @@
 
 using System.Collections.Generic;
 using System.Globalization;
-#if WINDOWS_PHONE
 using System.Threading.Tasks;
+#if WINDOWS_PHONE
 using System.Windows;
 #endif
 using ZumoE2ETestApp.Framework;
@@ -25,9 +25,15 @@ namespace ZumoE2ETestApp.Tests
             return new ZumoTest("Simple alert", async delegate(ZumoTest test)
             {
                 InputDialog dialog = new InputDialog("Information", alert, "OK");
-                await dialog.Display();
+                if (ZumoTestGlobals.ShowAlerts)
+                {
+                    await dialog.Display();
+                }
                 return true;
-            });
+            })
+            {
+                CanRunUnattended = false
+            };
 #else
             return new ZumoTest("Alert: " + alert, delegate(ZumoTest test)
             {
@@ -35,7 +41,10 @@ namespace ZumoE2ETestApp.Tests
                 TaskCompletionSource<bool> tcs = new TaskCompletionSource<bool>();
                 tcs.SetResult(true);
                 return tcs.Task;
-            });
+            })
+            {
+                CanRunUnattended = false
+            };
 #endif
         }
 
@@ -51,8 +60,14 @@ namespace ZumoE2ETestApp.Tests
 
 #if !WINDOWS_PHONE
                 InputDialog dialog = new InputDialog("Question", question, "No", "Yes");
-                await dialog.Display();
-                bool answerWasYes = !dialog.Cancelled;
+                bool answerWasYes = expectedAnswer;
+
+                if (ZumoTestGlobals.ShowAlerts)
+                {
+                    await dialog.Display();
+                    answerWasYes = !dialog.Cancelled;
+                }
+
 #else
                 bool answerWasYes = await InputDialog.DisplayYesNo(question);
 #endif
@@ -66,7 +81,10 @@ namespace ZumoE2ETestApp.Tests
                 {
                     return true;
                 }
-            });
+            })
+            {
+                CanRunUnattended = false
+            };
         }
 
 #if WINDOWS_PHONE
@@ -75,6 +93,14 @@ namespace ZumoE2ETestApp.Tests
             return new ZumoTest("Input: " + title, async delegate(ZumoTest test)
             {
                 string initialText;
+                if (System.IO.IsolatedStorage.IsolatedStorageSettings.ApplicationSettings.TryGetValue<string>(key, out initialText))
+                {
+                    // From the isolated storage, takes precedence (used in automation)
+                    test.AddLog("Retrieved value from isolated storage: {0}", initialText);
+                    propertyBag[key] = initialText;
+                    return true;
+                }
+
                 propertyBag.TryGetValue(key, out initialText);
                 var result = await InputDialog.Display(title, initialText);
                 if (result != null)
@@ -83,9 +109,27 @@ namespace ZumoE2ETestApp.Tests
                 }
 
                 return true;
-            });
+            })
+            {
+                CanRunUnattended = false
+            };
         }
 
 #endif
+
+        /// <summary>
+        /// Creates a test which doesn't do anything, used only to separate groups of tests
+        /// </summary>
+        /// <param name="name">The test name.</param>
+        /// <returns>A test which always passes without doing anything.</returns>
+        public static ZumoTest CreateSeparator(string name)
+        {
+            return new ZumoTest(name, delegate(ZumoTest test)
+            {
+                TaskCompletionSource<bool> tcs = new TaskCompletionSource<bool>();
+                tcs.SetResult(true);
+                return tcs.Task;
+            });
+        }
     }
 }

@@ -27,8 +27,6 @@ function defineApiTestsNamespace() {
     tests.push(createCustomApiTest('POST - array body', applicationApiName, 'POST', [1, false, 2], null, null, 200));
     tests.push(createCustomApiTest('POST - empty array body', applicationApiName, 'POST', [], null, null, 200));
     tests.push(createCustomApiTest('POST - empty object body', applicationApiName, 'POST', {}, null, null, 200));
-    tests.push(createCustomApiTest('POST - number body', applicationApiName, 'POST', 123));
-    tests.push(createCustomApiTest('POST - boolean body', applicationApiName, 'POST', true));
 
     tests.push(createCustomApiTest('GET - custom headers', applicationApiName, 'GET', null, { 'x-test-zumo-first': 'header value' }));
     tests.push(createCustomApiTest('PATCH - query parameters', applicationApiName, 'PATCH', [1, 2, 3], null, { x: '6', y: '7' }));
@@ -134,6 +132,48 @@ function defineApiTestsNamespace() {
                 done(true);
             });
 
+            function objToXml(obj) {
+                return '<root>' + jsToXml(obj) + '</root>';
+            }
+
+            function jsToXml(value) {
+                if (value === null) return 'null';
+                var type = typeof value;
+                var result = '';
+                var i = 0;
+                switch (type.toLowerCase()) {
+                    case 'string':
+                    case 'boolean':
+                    case 'number':
+                        return value.toString();
+                    case 'function':
+                    case 'object':
+                        if (Object.prototype.toString.call(value) === '[object Array]') {
+                            result = result + '<array>';
+                            for (i = 0; i < value.length; i++) {
+                                result = result + '<item>' + jsToXml(value[i]) + '</item>';
+                            }
+                            result = result + '</array>';
+                        } else {
+                            var k;
+                            var keys = [];
+                            for (k in value) {
+                                if (value.hasOwnProperty(k)) {
+                                    if (typeof value[k] !== 'function') {
+                                        keys.push(k);
+                                    }
+                                }
+                            }
+                            keys.sort();
+                            for (i = 0; i < keys.length; i++) {
+                                k = keys[i];
+                                result = result + '<' + k + '>' + jsToXml(value[k]) + '</' + k + '>';
+                            }
+                        }
+                }
+                return result;
+            }
+
             function validateBody(test, resultObject, xhr, expectedBodyObject, outputFormat) {
                 outputFormat = outputFormat || dataTypeJson;
                 var responseText = xhr.responseText;
@@ -142,49 +182,7 @@ function defineApiTestsNamespace() {
                     if (expectedBodyString !== responseText) {
                         test.addLog('Error comparing response. Expected: ', expectedBodyString, '; actual: ', responseText);
                         return false;
-                    }
-
-                    function objToXml(obj) {
-                        return '<root>' + jsToXml(obj) + '</root>';
-                    }
-
-                    function jsToXml(value) {
-                        if (value === null) return 'null';
-                        var type = typeof value;
-                        var result = '';
-                        var i = 0;
-                        switch (type.toLowerCase()) {
-                            case 'string':
-                            case 'boolean':
-                            case 'number':
-                                return value.toString();
-                            case 'function':
-                            case 'object':
-                                if (Object.prototype.toString.call(value) === '[object Array]') {
-                                    result = result + '<array>';
-                                    for (i = 0; i < value.length; i++) {
-                                        result = result + '<item>' + jsToXml(value[i]) + '</item>';
-                                    }
-                                    result = result + '</array>';
-                                } else {
-                                    var k;
-                                    var keys = [];
-                                    for (k in value) {
-                                        if (value.hasOwnProperty(k)) {
-                                            if (typeof value[k] !== 'function') {
-                                                keys.push(k);
-                                            }
-                                        }
-                                    }
-                                    keys.sort();
-                                    for (i = 0; i < keys.length; i++) {
-                                        k = keys[i];
-                                        result = result + '<' + k + '>' + jsToXml(value[k]) + '</' + k + '>';
-                                    }
-                                }
-                        }
-                        return result;
-                    }
+                    }                    
                 } else {
                     if (outputFormat == dataTypeOther) {
                         test.addLog('Unescaping response. Original: ', responseText);

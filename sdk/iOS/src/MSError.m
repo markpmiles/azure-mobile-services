@@ -16,4 +16,5 @@ NSString *const MSErrorDomain = @"com.Microsoft.WindowsAzureMobileServices.Error
 
 NSString *const MSErrorRequestKey = @"com.Microsoft.WindowsAzureMobileServices.ErrorRequestKey";
 NSString *const MSErrorResponseKey = @"com.Microsoft.WindowsAzureMobileServices.ErrorResponseKey";
-
+NSString *const MSErrorServerItemKey = @"com.Microsoft.WindowsAzureMobileServices.ErrorServerItemKey";
+NSString *const MSErrorPushResultKey = @"com.Microsoft.WindowsAzureMobileServices.ErrorPushResultKey";

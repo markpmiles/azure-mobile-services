@@ -26,14 +26,17 @@ namespace ZumoE2ETestAppWP8
 {
     public partial class MainPage : PhoneApplicationPage
     {
-        List<ZumoTestGroup> allTests;
+        List<ZumoTestGroup> allTestGroups;
         ZumoTestGroup currentGroup;
+
+        const string AllTestsGroupName = "All tests";
 
         // Constructor
         public MainPage()
         {
             InitializeComponent();
-            this.allTests = TestStore.CreateTests();
+
+            this.allTestGroups = TestStore.CreateTestGroups();
             if (this.appBtnBack == null)
             {
                 var appBar = this.ApplicationBar;
@@ -63,7 +66,7 @@ namespace ZumoE2ETestAppWP8
             base.OnNavigatedTo(e);
             if (this.lstTestGroups.ItemsSource == null)
             {
-                List<ListViewForTestGroup> sources = allTests.Select((tg, i) => new ListViewForTestGroup(i + 1, tg)).ToList();
+                List<ListViewForTestGroup> sources = allTestGroups.Select((tg, i) => new ListViewForTestGroup(i + 1, tg)).ToList();
                 this.lstTestGroups.ItemsSource = sources;
 
                 SavedAppInfo savedAppInfo = await AppInfoRepository.Instance.GetSavedAppInfo();
@@ -74,6 +77,21 @@ namespace ZumoE2ETestAppWP8
                     this.txtAppKey.Text = savedAppInfo.LastService.AppKey;
                 }
             }
+
+            // Check if any of the text box values can be found in app settings
+            // This is used for test automation, and takes precedence over saved app info.
+            Action<TextBox, string> overrideFromAppSettings = (control, settingName) =>
+            {
+                string value;
+                if (System.IO.IsolatedStorage.IsolatedStorageSettings.ApplicationSettings.TryGetValue<string>(settingName, out value))
+                {
+                    control.Text = value;
+                }
+            };
+
+            overrideFromAppSettings(this.txtAppUrl, "appUrl");
+            overrideFromAppSettings(this.txtAppKey, "appKey");
+            overrideFromAppSettings(this.txtUploadUrl, "uploadUrl");
         }
 
         private void lstTestGroups_SelectionChanged_1(object sender, SelectionChangedEventArgs e)
@@ -81,7 +99,7 @@ namespace ZumoE2ETestAppWP8
             int selectedIndex = this.lstTestGroups.SelectedIndex;
             if (selectedIndex >= 0)
             {
-                ZumoTestGroup testGroup = allTests[selectedIndex];
+                ZumoTestGroup testGroup = allTestGroups[selectedIndex];
                 this.currentGroup = testGroup;
                 List<ListViewForTest> sources = testGroup.GetTests().Select((t, i) => new ListViewForTest(i + 1, t)).ToList();
                 this.lstTests.ItemsSource = sources;
@@ -140,20 +158,7 @@ namespace ZumoE2ETestAppWP8
             }
 
             var logs = string.Join(Environment.NewLine, this.currentGroup.GetLogs());
-            uploadUrl = uploadUrl + "?platform=wp8";
-            using (var client = new HttpClient())
-            {
-                using (var request = new HttpRequestMessage(HttpMethod.Post, uploadUrl))
-                {
-                    request.Content = new StringContent(logs, Encoding.UTF8, "text/plain");
-                    using (var response = await client.SendAsync(request))
-                    {
-                        var body = await response.Content.ReadAsStringAsync();
-                        var title = response.IsSuccessStatusCode ? "Upload successful" : "Error uploading logs";
-                        MessageBox.Show(body, title, MessageBoxButton.OK);
-                    }
-                }
-            }
+            await Util.UploadLogs(uploadUrl, logs, "wp8", false);
         }
 
         private async void appBtnRunTests_Click_1(object sender, EventArgs e)
@@ -206,11 +211,19 @@ namespace ZumoE2ETestAppWP8
                 }
                 else
                 {
-                    int passed = this.currentGroup.AllTests.Count(t => t.Status == TestStatus.Passed);
-                    string message = string.Format(CultureInfo.InvariantCulture, "Passed {0} of {1} tests", passed, this.currentGroup.AllTests.Count());
-                    MessageBox.Show(message, "Test group finished", MessageBoxButton.OK);
-                    // Saving app info for future runs
-                    // TODO: implement saving
+                    if (testGroup.Name.StartsWith(TestStore.AllTestsGroupName) && !string.IsNullOrEmpty(this.txtUploadUrl.Text))
+                    {
+                        // Upload logs automatically if running all tests
+                        await Util.UploadLogs(this.txtUploadUrl.Text, string.Join("\n", testGroup.GetLogs()), "wp8", true);
+                    }
+                    else
+                    {
+                        int passed = this.currentGroup.AllTests.Count(t => t.Status == TestStatus.Passed);
+                        int skipped = this.currentGroup.AllTests.Count(t => t.Status == TestStatus.Skipped);
+                        int failed = this.currentGroup.AllTests.Count(t => t.Status == TestStatus.Failed);
+                        string message = string.Format(CultureInfo.InvariantCulture, "Passed {0} of {1} tests (Skipped {2})", passed, (passed + failed), skipped);
+                        MessageBox.Show(message, "Test group finished", MessageBoxButton.OK);
+                    }
                 }
             }
         }

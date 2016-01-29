@@ -18,7 +18,7 @@ using ZumoE2ETestApp.Tests.Types;
 
 namespace ZumoE2ETestApp.Tests
 {
-    internal static class ZumoCustomApiTests
+    public static class ZumoCustomApiTests
     {
         private const string PublicApiName = "public";
         private const string AppApiName = "application";
@@ -28,9 +28,9 @@ namespace ZumoE2ETestApp.Tests
 
         private const string Letters = "abcdefghijklmnopqrstuvwxyz";
 
-        enum ApiPermissions { Public, Application, User, Admin }
-        enum DataFormat { Json, Xml, Other }
-        enum TypedTestType { GetByTitle, GetByDate, PostByDuration, PostByYear }
+        public enum ApiPermissions { Public, Application, User, Admin }
+        public enum DataFormat { Json, Xml, Other }
+        public enum TypedTestType { GetByTitle, GetByDate, PostByDuration, PostByYear }
 
         private static readonly Dictionary<ApiPermissions, string> apiNames = new Dictionary<ApiPermissions, string>
         {
@@ -48,19 +48,29 @@ namespace ZumoE2ETestApp.Tests
             int seed = now.Year * 10000 + now.Month * 100 + now.Day;
             Random rndGen = new Random(seed);
 
+#if !NET45
+            result.AddTest(ZumoLoginTests.CreateLogoutTest());
+#endif
+
             result.AddTest(CreateHttpContentApiTest(DataFormat.Xml, DataFormat.Json, rndGen));
 
 #if !NET45
-            result.AddTest(ZumoLoginTests.CreateLogoutTest());
+            List<ZumoTest> testsWhichNeedAuth = new List<ZumoTest>();
 
             foreach (ApiPermissions apiPermission in Util.EnumGetValues(typeof(ApiPermissions)))
             {
-                result.AddTest(CreateJTokenApiTest(apiPermission, false, rndGen));
+                testsWhichNeedAuth.Add(CreateJTokenApiTest(apiPermission, false, rndGen));
             }
 
-            result.AddTest(ZumoLoginTests.CreateLoginTest(MobileServiceAuthenticationProvider.Facebook));
-            result.AddTest(CreateJTokenApiTest(ApiPermissions.User, true, rndGen));
-            result.AddTest(ZumoLoginTests.CreateLogoutTest());
+            testsWhichNeedAuth.Add(ZumoLoginTests.CreateLoginTest(MobileServiceAuthenticationProvider.Google));
+            testsWhichNeedAuth.Add(CreateJTokenApiTest(ApiPermissions.User, true, rndGen));
+            testsWhichNeedAuth.Add(ZumoLoginTests.CreateLogoutTest());
+
+            foreach (var test in testsWhichNeedAuth)
+            {
+                test.CanRunUnattended = false;
+                result.AddTest(test);
+            }
 #endif
 
             foreach (DataFormat inputFormat in Util.EnumGetValues(typeof(DataFormat)))
@@ -72,7 +82,7 @@ namespace ZumoE2ETestApp.Tests
             }
 
 
-            result.AddTest(ZumoQueryTests.CreatePopulateTableTest());
+            result.AddTest(ZumoQueryTests.CreatePopulateStringIdTableTest());
             foreach (TypedTestType testType in Util.EnumGetValues(typeof(TypedTestType)))
             {
                 result.AddTest(CreateTypedApiTest(rndGen, testType));
@@ -95,23 +105,23 @@ namespace ZumoE2ETestApp.Tests
                     test.AddLog("Test with seed = {0}", seed);
                     Random rndGen = new Random(seed);
 
-                    Movie[] expectedResult = null;
-                    AllMovies actualResult = null;
-                    Movie inputTemplate = ZumoQueryTestData.AllMovies[rndGen.Next(ZumoQueryTestData.AllMovies.Length)];
+                    StringIdMovie[] expectedResult = null;
+                    AllStringIdMovies actualResult = null;
+                    StringIdMovie inputTemplate = ZumoQueryTestData.AllStringIdMovies()[rndGen.Next(ZumoQueryTestData.AllStringIdMovies().Length)];
                     test.AddLog("Using movie '{0}' as template", inputTemplate.Title);
                     string apiUrl;
                     switch (testType)
                     {
                         case TypedTestType.GetByTitle:
                             apiUrl = apiName + "/title/" + inputTemplate.Title;
-                            expectedResult = new Movie[] { inputTemplate };
-                            actualResult = await client.InvokeApiAsync<AllMovies>(apiUrl, HttpMethod.Get, null);
+                            expectedResult = new StringIdMovie[] { inputTemplate };
+                            actualResult = await client.InvokeApiAsync<AllStringIdMovies>(apiUrl, HttpMethod.Get, null);
                             break;
                         case TypedTestType.GetByDate:
                             var releaseDate = inputTemplate.ReleaseDate;
                             apiUrl = apiName + "/date/" + releaseDate.Year + "/" + releaseDate.Month + "/" + releaseDate.Day;
-                            expectedResult = ZumoQueryTestData.AllMovies.Where(m => m.ReleaseDate == releaseDate).ToArray();
-                            actualResult = await client.InvokeApiAsync<AllMovies>(apiUrl, HttpMethod.Get, null);
+                            expectedResult = ZumoQueryTestData.AllStringIdMovies().Where(m => m.ReleaseDate == releaseDate).ToArray();
+                            actualResult = await client.InvokeApiAsync<AllStringIdMovies>(apiUrl, HttpMethod.Get, null);
                             break;
                         case TypedTestType.PostByDuration:
                         case TypedTestType.PostByYear:
@@ -133,7 +143,7 @@ namespace ZumoE2ETestApp.Tests
                                 null :
                                 new Dictionary<string, string> { { "orderBy", orderBy } };
 
-                            Func<Movie, bool> predicate;
+                            Func<StringIdMovie, bool> predicate;
                             if (testType == TypedTestType.PostByYear)
                             {
                                 predicate = m => m.Year == inputTemplate.Year;
@@ -147,14 +157,14 @@ namespace ZumoE2ETestApp.Tests
 
                             if (queryParams == null)
                             {
-                                actualResult = await client.InvokeApiAsync<Movie, AllMovies>(apiUrl, inputTemplate);
+                                actualResult = await client.InvokeApiAsync<StringIdMovie, AllStringIdMovies>(apiUrl, inputTemplate);
                             }
                             else
                             {
-                                actualResult = await client.InvokeApiAsync<Movie, AllMovies>(apiUrl, inputTemplate, HttpMethod.Post, queryParams);
+                                actualResult = await client.InvokeApiAsync<StringIdMovie, AllStringIdMovies>(apiUrl, inputTemplate, HttpMethod.Post, queryParams);
                             }
 
-                            expectedResult = ZumoQueryTestData.AllMovies.Where(predicate).ToArray();
+                            expectedResult = ZumoQueryTestData.AllStringIdMovies().Where(predicate).ToArray();
                             if (orderBy == null || orderBy == "Title")
                             {
                                 Array.Sort(expectedResult, (m1, m2) => m1.Title.CompareTo(m2.Title));
@@ -178,19 +188,22 @@ namespace ZumoE2ETestApp.Tests
                             test.AddLog("  - {0}", error);
                         }
 
+                        test.AddLog("Expected: {0}", string.Join(", ", expectedResult.Select(m => m.Title)));
+                        test.AddLog("Actual: {0}", string.Join(", ", actualResult.Movies.Select(m => m.Title)));
                         testResult = false;
                         break;
                     }
                 }
 
                 return testResult;
-            });
+            }, ZumoTestGlobals.RuntimeFeatureNames.STRING_ID_TABLES);
         }
 
         private static ZumoTest CreateHttpContentApiTest(DataFormat inputFormat, DataFormat outputFormat, Random seedGenerator)
         {
             string testName = string.Format("HttpContent overload - input {0} / output {1}", inputFormat, outputFormat);
-            return new ZumoTest(testName, async delegate(ZumoTest test) {
+            return new ZumoTest(testName, async delegate(ZumoTest test)
+            {
                 var client = ZumoTestGlobals.Instance.Client;
                 var apiName = AppApiName;
                 var testResult = true;
@@ -430,7 +443,7 @@ namespace ZumoE2ETestApp.Tests
                             new JProperty("member" + i, SanitizeJsonXml(jp.Value))));
                 default:
                     throw new ArgumentException("Invalid type: " + body.Type);
-                   
+
             }
         }
 
@@ -657,6 +670,10 @@ namespace ZumoE2ETestApp.Tests
             {
                 var name = CreateString(rndGen, 1, 10, Letters);
                 var value = CreateString(rndGen);
+                if (!result.ContainsKey(name))
+                {
+                    result.Add(name, value);
+                }
             }
 
             return result;
@@ -775,9 +792,14 @@ namespace ZumoE2ETestApp.Tests
         {
             switch (rndGen.Next(10))
             {
-                case 0: case 1: case 2:
+                case 0:
+                case 1:
+                case 2:
                     return HttpMethod.Post;
-                case 3: case 4: case 5: case 6:
+                case 3:
+                case 4:
+                case 5:
+                case 6:
                     return HttpMethod.Get;
                 case 7:
                     return HttpMethod.Put;

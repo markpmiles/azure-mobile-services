@@ -13,6 +13,10 @@ using System.Threading.Tasks;
 using Microsoft.WindowsAzure.MobileServices.Test;
 using Microsoft.WindowsAzure.MobileServices.TestFramework;
 
+#if XAMARIN
+using TaskEx=System.Threading.Tasks.Task;
+#endif
+
 namespace Microsoft.WindowsAzure.MobileServices.Test
 {
     [Tag("collection")]
@@ -25,14 +29,14 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             // Get the Books table
             MobileServiceTableQueryMock<Book> query = new MobileServiceTableQueryMock<Book>();
 
-            MobileServiceCollection<Book, Book> collection = new MobileServiceCollection<Book, Book>(query);
+            MobileServiceCollection<Book> collection = new MobileServiceCollection<Book>(query);
             CancellationTokenSource tokenSource = new CancellationTokenSource();
 
             Exception ex = null;
 
             try
             {
-                await TaskEx.WhenAll(collection.LoadMoreItemsAsync(tokenSource.Token), collection.LoadMoreItemsAsync(tokenSource.Token));
+                await Task.WhenAll(collection.LoadMoreItemsAsync(tokenSource.Token), collection.LoadMoreItemsAsync(tokenSource.Token));
             }
             catch (InvalidOperationException e)
             {
@@ -75,7 +79,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             MobileServiceTableQueryMock<Book> query = new MobileServiceTableQueryMock<Book>();
             query.EnumerableAsyncThrowsException = true;
 
-            MobileServiceCollection<Book, Book> collection = new MobileServiceCollection<Book, Book>(query);
+            MobileServiceCollection<Book> collection = new MobileServiceCollection<Book>(query);
 
             List<string> properties = new List<string>();
             List<string> expectedProperties = new List<string>() { "Count", "Item[]" };
@@ -127,7 +131,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             MobileServiceTableQueryMock<Book> query = new MobileServiceTableQueryMock<Book>();
             query.EnumerableAsyncThrowsException = true;
 
-            MobileServiceCollection<Book, Book> collection = new MobileServiceCollection<Book, Book>(query);
+            MobileServiceCollection<Book> collection = new MobileServiceCollection<Book>(query);
 
             List<string> properties = new List<string>();
             List<string> expectedProperties = new List<string>() {  };
@@ -183,7 +187,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             MobileServiceTableQueryMock<Book> query = new MobileServiceTableQueryMock<Book>();
             query.EnumerableAsyncThrowsException = true;
 
-            MobileServiceCollection<Book, Book> collection = new MobileServiceCollection<Book, Book>(query);
+            MobileServiceCollection<Book> collection = new MobileServiceCollection<Book>(query);
 
             List<string> properties = new List<string>();
             List<string> expectedProperties = new List<string>() { "Count", "Item[]" };
@@ -235,7 +239,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             MobileServiceTableQueryMock<Book> query = new MobileServiceTableQueryMock<Book>();
             query.EnumerableAsyncThrowsException = true;
 
-            MobileServiceCollection<Book, Book> collection = new MobileServiceCollection<Book, Book>(query);
+            MobileServiceCollection<Book> collection = new MobileServiceCollection<Book>(query);
 
             List<string> properties = new List<string>();
             List<string> expectedProperties = new List<string>() { "Count", "Item[]" };
@@ -289,7 +293,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             MobileServiceTableQueryMock<Book> query = new MobileServiceTableQueryMock<Book>();
             query.EnumerableAsyncThrowsException = true;
 
-            MobileServiceCollection<Book, Book> collection = new MobileServiceCollection<Book, Book>(query);
+            MobileServiceCollection<Book> collection = new MobileServiceCollection<Book>(query);
             
             Assert.IsTrue(collection.HasMoreItems);
         }
@@ -323,7 +327,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             // Get the Books table
             MobileServiceTableQueryMock<Book> query = new MobileServiceTableQueryMock<Book>();
 
-            MobileServiceCollection<Book, Book> collection = new MobileServiceCollection<Book, Book>(query);
+            MobileServiceCollection<Book> collection = new MobileServiceCollection<Book>(query);
             CancellationTokenSource tokenSource = new CancellationTokenSource();
 
             List<string> properties = new List<string>();
@@ -339,5 +343,62 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             Assert.IsTrue(properties.SequenceEqual(expectedProperties));
             Assert.IsTrue(actions.SequenceEqual(expectedActions));
         }
+
+        [AsyncTestMethod]
+        public async Task MobileServiceCollectionLoadMoreItemsAsyncFiresLoadingItemsEventBeforeReadingData()
+        {
+            // Get the Books table
+            MobileServiceTableQueryMock<Book> query = new MobileServiceTableQueryMock<Book>();
+
+            MobileServiceCollection<Book, Book> collection = new MobileServiceCollection<Book, Book>(query);
+            CancellationTokenSource tokenSource = new CancellationTokenSource();
+
+            Exception ex = null;
+
+            bool firedLoading = false;
+
+            collection.LoadingItems += (s, e) => firedLoading = true;
+
+            try
+            {
+                int result = await collection.LoadMoreItemsAsync(tokenSource.Token);
+            }
+            catch (Exception e)
+            {
+                ex = e;
+            }
+
+            Assert.IsTrue(firedLoading);
+            Assert.IsNull(ex);
+
+        }
+
+        [AsyncTestMethod]
+        public async Task MobileServiceCollectionLoadMoreItemsAsyncFiresLoadingCompleteEventAfterReadingData()
+        {
+            // Get the Books table
+            MobileServiceTableQueryMock<Book> query = new MobileServiceTableQueryMock<Book>();
+
+            MobileServiceCollection<Book, Book> collection = new MobileServiceCollection<Book, Book>(query);
+            CancellationTokenSource tokenSource = new CancellationTokenSource();
+
+            Exception ex = null;
+
+            int loadedEventArgsManyItemsLoaded = 0;
+            collection.LoadingComplete += (s, e) => loadedEventArgsManyItemsLoaded = e.TotalItemsLoaded;
+
+            try
+            {
+                int result = await collection.LoadMoreItemsAsync(tokenSource.Token);
+            }
+            catch (Exception e)
+            {
+                ex = e;
+            }
+
+            Assert.AreEqual(loadedEventArgsManyItemsLoaded, 2);
+            Assert.IsNull(ex);
+
+        }    
     }
 }

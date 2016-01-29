@@ -10,11 +10,11 @@ using System.Resources;
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("Microsoft Corporation")]
-[assembly: AssemblyProduct("Windows Azure Mobile Services SDK")]
+[assembly: AssemblyProduct("Microsoft Azure Mobile Services SDK")]
 [assembly: AssemblyCopyright("© Microsoft Corporation. All rights reserved.")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.3.0.0")]
 [assembly: AssemblyFileVersion("1.0.0.0")]
 [assembly: NeutralResourcesLanguageAttribute("en-US")]
 

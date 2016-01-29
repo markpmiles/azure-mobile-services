@@ -145,7 +145,9 @@ exports.Reporter = reporter;
 global.$showTestSetupUI = function () {
     var setupFlyout = document.getElementById('setupFlyout');
     var txtRuntimeUri = document.getElementById('txtRuntimeUri');
+    var txtRuntimeKey = document.getElementById('txtRuntimeKey');
     var txtTags = document.getElementById('txtTags');
+    var chDotNet = document.getElementById('chDotNet');
     var btnStartTests = document.getElementById('btnStartTests');
     var testResults = document.getElementById('testResults');
     var show = function () {
@@ -164,14 +166,18 @@ global.$showTestSetupUI = function () {
 
         // Fill the UI with the latest values
         txtRuntimeUri.value = $harness.settings.custom.MobileServiceRuntimeUrl || '';
+        txtRuntimeKey.value = $harness.settings.custom.MobileServiceRuntimeKey || '';
         txtTags.value = $harness.settings.tagExpression || '';
+        chDotNet.checked = $harness.settings.custom.platform === 'dotNet';
 
         show();
         btnStartTests.onclick = function () {
             window.onclick = null;
 
             $harness.settings.custom.MobileServiceRuntimeUrl = txtRuntimeUri.value;
+            $harness.settings.custom.MobileServiceRuntimeKey = txtRuntimeKey.value;
             $harness.settings.tagExpression = txtTags.value;
+            $harness.settings.custom.platform = chDotNet.checked ? 'dotNet' : 'node';
             setupFlyout.winControl.hide();
             $run();
         };

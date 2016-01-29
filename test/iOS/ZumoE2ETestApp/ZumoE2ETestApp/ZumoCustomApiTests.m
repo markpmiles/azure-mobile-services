@@ -27,8 +27,6 @@ typedef enum { DataFormatJson, DataFormatXml, DataFormatOther } ApiDataFormat;
     [result addObject:[self createJsonBasedTestWithName:@"POST - array body" apiName:apiApplicationName httpMethod:@"POST" body:@[@1,@NO,@2] headers:nil query:nil statusCode:200]];
     [result addObject:[self createJsonBasedTestWithName:@"POST - empty array body" apiName:apiApplicationName httpMethod:@"POST" body:@[] headers:nil query:nil statusCode:200]];
     [result addObject:[self createJsonBasedTestWithName:@"POST - empty object body" apiName:apiApplicationName httpMethod:@"POST" body:@{} headers:nil query:nil statusCode:200]];
-    [result addObject:[self createJsonBasedTestWithName:@"PUT - number body" apiName:apiApplicationName httpMethod:@"PUT" body:@123 headers:nil query:nil statusCode:200]];
-    [result addObject:[self createJsonBasedTestWithName:@"POST - boolean body" apiName:apiApplicationName httpMethod:@"POST" body:@YES headers:nil query:nil statusCode:200]];
     
     [result addObject:[self createJsonBasedTestWithName:@"GET - custom headers" apiName:apiApplicationName httpMethod:@"GET" body:nil headers:@{@"x-test-zumo-1": @"header value"} query:nil statusCode:200]];
     
@@ -57,11 +55,18 @@ typedef enum { DataFormatJson, DataFormatXml, DataFormatOther } ApiDataFormat;
     [result addObject:[self createApiPermissionsTestWithName:@"Authenticated API - logged out" apiName:apiUserName shouldSucceed:NO]];
     [result addObject:[self createApiPermissionsTestWithName:@"Admin API - logged out" apiName:apiAdminName shouldSucceed:NO]];
 
+    int indexOfLastUnattendedTest = [result count];
+    
     [result addObject:[ZumoLoginTests createLoginTestForProvider:@"facebook" usingSimplifiedMode:YES]];
     [result addObject:[self createApiPermissionsTestWithName:@"Application API - logged in" apiName:apiApplicationName shouldSucceed:YES]];
     [result addObject:[self createApiPermissionsTestWithName:@"Authenticated API - logged in" apiName:apiUserName shouldSucceed:YES]];
     [result addObject:[self createApiPermissionsTestWithName:@"Admin API - logged in" apiName:apiAdminName shouldSucceed:NO]];
 
+    for (int i = indexOfLastUnattendedTest; i < [result count]; i++) {
+        ZumoTest *test = result[i];
+        [test setCanRunUnattended:NO];
+    }
+    
     [result addObject:[ZumoLoginTests createLogoutTest]];
 
     return result;

@@ -4,10 +4,16 @@
 
 #import <Foundation/Foundation.h>
 #import <WindowsAzureMobileServices/WindowsAzureMobileServices.h>
-#import "ZumoTest.h"
 
 typedef void (^ZumoHttpRequestCompletion)(NSHTTPURLResponse *response, NSData *responseBody, NSError *error);
 
+extern NSString *const RUNTIME_VERSION_KEY;
+extern NSString *const CLIENT_VERSION_KEY;
+extern NSString *const RUNTIME_FEATURES_KEY;
+
+extern NSString *const FEATURE_STRING_ID_TABLES;
+extern NSString *const FEATURE_INT_ID_TABLES;
+extern NSString *const FEATURE_NH_PUSH_ENABLED;
 
 @protocol PushNotificationReceiver <NSObject>
 
@@ -18,11 +24,11 @@ typedef void (^ZumoHttpRequestCompletion)(NSHTTPURLResponse *response, NSData *r
 
 @interface ZumoTestGlobals : NSObject
 {
-    
+    NSMutableDictionary *globalTestParameters;
 }
 
 @property (nonatomic, strong) MSClient *client;
-@property (nonatomic, copy) NSString *deviceToken;
+@property (nonatomic, copy) NSData *deviceToken;
 @property (nonatomic, copy) NSString *remoteNotificationRegistrationStatus;
 @property (nonatomic, weak) id<PushNotificationReceiver> pushNotificationDelegate;
 
@@ -32,11 +38,14 @@ typedef void (^ZumoHttpRequestCompletion)(NSHTTPURLResponse *response, NSData *r
 - (NSArray *)loadAppInfo;
 - (void)saveUploadLogsUrl:(NSString *)url;
 - (NSString *)loadUploadLogsUrl;
+- (NSMutableDictionary *)globalTestParameters;
 
 // Helper methods
-+ (NSString *)testStatusToString:(TestStatus)status;
 + (NSDate *)createDateWithYear:(NSInteger)year month:(NSInteger)month day:(NSInteger)day;
 + (BOOL)compareDate:(NSDate *)date1 withDate:(NSDate *)date2;
++ (BOOL)compareObjects:(NSDictionary *)obj1 with:(NSDictionary *)obj2 log:(NSMutableArray *)errors;
++ (BOOL)compareObjects:(NSDictionary *)obj1 with:(NSDictionary *)obj2 ignoreKeys:(NSArray *)keys log:(NSMutableArray *)errors;
 + (BOOL)compareJson:(id)json1 with:(id)json2 log:(NSMutableArray *)errors;
++ (NSString *)dateToString:(NSDate *)date;
 
 @end

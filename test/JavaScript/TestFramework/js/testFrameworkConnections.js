@@ -47,6 +47,8 @@ function getTestDisplayColor(test) {
         return 'Lime';
     } else if (test.status == zumo.TSRunning) {
         return 'Gray';
+    } else if (test.status == zumo.TSSkipped) {
+        return 'Blue';
     } else {
         return 'White';
     }
@@ -61,6 +63,8 @@ document.getElementById('btnRunTests').onclick = function (evt) {
     var currentGroup = zumo.testGroups[zumo.currentGroup];
     var appUrl = document.getElementById('txtAppUrl').value;
     var appKey = document.getElementById('txtAppKey').value;
+    var uploadUrl = document.getElementById('txtSendLogsUrl').value.trim();
+
     if (zumo.initializeClient(appUrl, appKey)) {
 
         saveLastUsedAppInfo();
@@ -70,8 +74,25 @@ document.getElementById('btnRunTests').onclick = function (evt) {
             logs = logs + '\n=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\n';
             logs = logs + 'Tests passed: ' + testsPassed + '\n';
             logs = logs + 'Tests failed: ' + testsFailed;
-            testPlatform.alert(logs);
+            if (currentGroup.name.indexOf(zumo.AllTestsGroupName) === 0 && uploadUrl !== '') {
+                // For all tests, upload logs automatically if URL is set
+                var testLogs = currentGroup.getLogs();
+                uploadLogs(uploadUrl, testLogs, true);
+                if (testsFailed == 0) {
+                    if (currentGroup.name == zumo.AllTestsGroupName) {
+                        btnRunAllTests.textContent = "Passed";
+                    }
+                    else {
+                        btnRunAllUnattendedTests.textContent = "Passed";
+                    }
+                }
+            }
+
+            if (showAlerts) {
+                testPlatform.alert(logs);
+            }
         }
+
         var updateTest = function (test, index) {
             var tblTests = document.getElementById('tblTestsBody');
             var tr = tblTests.childNodes[index];
@@ -117,21 +138,80 @@ document.getElementById('btnSendLogs').onclick = function (evt) {
 
     var currentGroup = zumo.testGroups[zumo.currentGroup];
     var logs = currentGroup.getLogs();
+    uploadLogs(uploadUrl, logs, false, function () {
+        saveLastUsedAppInfo();
+    });
+}
+
+function uploadLogs(url, logs, allTests, done) {
     var xhr = new XMLHttpRequest();
     xhr.onreadystatechange = function () {
         if (xhr.readyState === 4) {
-            saveLastUsedAppInfo();
-            testPlatform.alert(xhr.responseText);
+            var continuation = function () {
+                if (done) {
+                    done();
+                }
+                document.getElementById('btnSendLogs').textContent = xhr.responseText;
+                if (!testPlatform.IsHTMLApplication) {
+                    Windows.Storage.KnownFolders.picturesLibrary.createFileAsync("done.txt", Windows.Storage.CreationCollisionOption.replaceExisting).then(function (file) {
+                        Windows.Storage.FileIO.writeTextAsync(file, xhr.responseText);
+                    });
+                }
+            };
+            if (showAlerts) {
+                testPlatform.alert(xhr.responseText, continuation);
+            } else {
+                continuation();
+            }
         }
     }
 
-    uploadUrl = uploadUrl + "?platform=winstorejs";
+    var platform = testPlatform.IsHTMLApplication ? 'htmljs' : 'winstorejs';
+    var uploadUrl = url + '?platform=' + platform;
+    if (allTests) {
+        uploadUrl = uploadUrl + '&allTests=true';
+    }
+
+    var runtimeVersion = zumo.util.globalTestParams[zumo.constants.SERVER_VERSION_KEY];
+    var clientVersion = zumo.util.globalTestParams[zumo.constants.CLIENT_VERSION_KEY];
+    if (runtimeVersion) {
+        uploadUrl = uploadUrl + '&runtimeVersion=' + runtimeVersion;
+    }
+
+    if (clientVersion) {
+        uploadUrl = uploadUrl + '&clientVersion=' + clientVersion;
+    }
+
     xhr.open('POST', uploadUrl, true);
     xhr.setRequestHeader('content-type', 'text/plain');
     xhr.send(logs);
 }
 
 var testGroups = zumo.testGroups;
+
+var btnRunAllTests = document.getElementById('btnRunAllTests');
+var btnRunAllUnattendedTests = document.getElementById('btnRunAllUnattendedTests');
+var showAlerts = true;
+
+if (btnRunAllTests) btnRunAllTests.onclick = handlerForAllTestsButtons(false);
+
+if (btnRunAllUnattendedTests) btnRunAllUnattendedTests.onclick = handlerForAllTestsButtons(true);
+
+function handlerForAllTestsButtons(unattendedOnly) {
+    return function (evt) {
+        showAlerts = false;
+        for (var i = 0; i < testGroups.length; i++) {
+            var groupName = testGroups[i].name;
+            if (!unattendedOnly && groupName === zumo.AllTestsGroupName) {
+                testGroupSelected(i);
+                break;
+            } else if (unattendedOnly && groupName == zumo.AllTestsUnattendedGroupName) {
+                testGroupSelected(i);
+                break;
+            }
+        }
+    }
+}
 
 function highlightSelectedGroup(groupIndex) {
     var testsGroupBody = document.getElementById('tblTestsGroupBody');
@@ -169,6 +249,10 @@ function testGroupSelected(index) {
         }
         tblTests.appendChild(tr);
     });
+
+    if (group.name === zumo.AllTestsGroupName || group.name === zumo.AllTestsUnattendedGroupName) {
+        document.getElementById('btnRunTests').click();
+    }
 }
 
 function addAttribute(element, name, value) {
@@ -180,7 +264,8 @@ function addAttribute(element, name, value) {
 function addTestGroups() {
     var tblTestsGroup = document.getElementById('tblTestsGroupBody');
 
-    jQuery.each(testGroups, function (index, item) {
+    for (var index = 0; index < testGroups.length; index++) {
+        var item = testGroups[index];
         var name = "" + (index + 1) + ". " + item.name + " tests";
         var tr = document.createElement('tr');
         var td = document.createElement('td');
@@ -190,22 +275,26 @@ function addTestGroups() {
         addAttribute(a, 'href', '#');
         addAttribute(a, 'class', 'testGroupItem');
 
-        if (a.attachEvent) {
+        var attachEvent = function (a, index) {
+            if (a.attachEvent) {
 
-            a.attachEvent('onclick', function () {
-                testGroupSelected(index);
-            });
-            a.innerText = toStaticHTML(name);
+                a.attachEvent('onclick', function () {
+                    testGroupSelected(index);
+                });
+                a.innerText = toStaticHTML(name);
+            }
+            else {
+                a.addEventListener('click', function () {
+                    testGroupSelected(index);
+                }, false);
+                a.textContent = name;
+            }
         }
-        else {
-            a.addEventListener('click', function () {
-                testGroupSelected(index);
-            }, false);
-            a.textContent = name;
-        }
+
+        attachEvent(a, index);
 
         tblTestsGroup.appendChild(tr);
-    });
+    }
 
 }
 

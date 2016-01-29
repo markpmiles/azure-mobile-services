@@ -3,7 +3,6 @@
 // ----------------------------------------------------------------------------
 
 using System;
-using System.Globalization;
 using System.IO.IsolatedStorage;
 
 namespace Microsoft.WindowsAzure.MobileServices
@@ -18,7 +17,16 @@ namespace Microsoft.WindowsAzure.MobileServices
         /// <summary>
         /// A singleton instance of the <see cref="ApplicationStorage"/>.
         /// </summary>
-        private static IApplicationStorage instance = new ApplicationStorage();
+        private static readonly IApplicationStorage instance = new ApplicationStorage();        
+
+        private ApplicationStorage() : this(string.Empty)
+        {
+        }
+
+        internal ApplicationStorage(string name)
+        {
+            this.StoragePrefix = name;
+        }
 
         /// <summary>
         /// A singleton instance of the <see cref="ApplicationStorage"/>.
@@ -30,6 +38,8 @@ namespace Microsoft.WindowsAzure.MobileServices
                 return instance;
             }
         }
+
+        private string StoragePrefix { get; set; }
 
         /// <summary>
         /// Tries to read a setting's value from 
@@ -50,11 +60,11 @@ namespace Microsoft.WindowsAzure.MobileServices
         {
             if (string.IsNullOrWhiteSpace(name))
             {
-                string message = Resources.IApplicationStorage_NullOrWhitespaceSettingName;
+                string message = "An application setting name must be provided. Null, empty or whitespace only names are not allowed.";
                 throw new ArgumentException(message);
             }
 
-            return IsolatedStorageSettings.ApplicationSettings.TryGetValue<object>(name, out value);
+            return IsolatedStorageSettings.ApplicationSettings.TryGetValue(string.Concat(this.StoragePrefix, name), out value);
         }
 
         /// <summary>
@@ -71,11 +81,16 @@ namespace Microsoft.WindowsAzure.MobileServices
         {
             if (string.IsNullOrWhiteSpace(name))
             {
-                string message = Resources.IApplicationStorage_NullOrWhitespaceSettingName;
+                string message = "An application setting name must be provided. Null, empty or whitespace only names are not allowed.";
                 throw new ArgumentException(message);
             }
 
-            IsolatedStorageSettings.ApplicationSettings[name] = value;
+            IsolatedStorageSettings.ApplicationSettings[string.Concat(this.StoragePrefix, name)] = value;
+        }
+
+        void IApplicationStorage.Save()
+        {
+            IsolatedStorageSettings.ApplicationSettings.Save();
         }
     }
 }

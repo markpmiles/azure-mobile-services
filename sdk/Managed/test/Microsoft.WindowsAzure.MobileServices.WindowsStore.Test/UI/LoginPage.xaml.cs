@@ -44,10 +44,16 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                     provider = MobileServiceAuthenticationProvider.Google;
                     testName = "Google Login";
                 }
+                else if (buttonClicked.Name.Contains("AzureActiveDirectory"))
+                {
+                    provider = MobileServiceAuthenticationProvider.WindowsAzureActiveDirectory;
+                    testName = "Azure Active Directory Login";
+                }
 
                 bool useSingleSignOn = UseSingleSignOnCheckBox.IsChecked.Value;
+                bool useStringProviderOverload = UseStringProviderOverloadCheckBox.IsChecked.Value;
 
-                TestResultsTextBlock.Text = await LoginTests.ExecuteTest(testName, () => LoginTests.TestLoginAsync(provider, useSingleSignOn));
+                TestResultsTextBlock.Text = await LoginTests.ExecuteTest(testName, () => LoginTests.TestLoginAsync(provider, useSingleSignOn, useStringProviderOverload));
             }
         }
     }

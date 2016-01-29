@@ -15,79 +15,6 @@ namespace Microsoft.WindowsAzure.MobileServices
     internal static class MobileServiceUrlBuilder
     {
         /// <summary>
-        /// Name of the reserved Mobile Services id member.
-        /// </summary>
-        /// <remarks>
-        /// Note: This value is used by other areas like serialiation to find
-        /// the name of the reserved id member.
-        /// </remarks>
-        internal const string IdPropertyName = "id";
-
-        /// <summary>
-        /// The route separator used to denote the table in a uri like
-        /// .../{app}/tables/{coll}.
-        /// </summary>
-        internal const string TableRouteSeparatorName = "tables";
-
-        /// <summary>
-        /// Convertd the value into a URI id literal for URIs like
-        /// {app-uri}/tables/{table}/{id}.
-        /// </summary>
-        /// <param name="id">
-        /// The id to convert.
-        /// </param>
-        /// <returns>
-        /// The corresponding URI literal.
-        /// </returns>
-        public static string ToUriConstant(object id)
-        {
-            Debug.Assert(id != null, "id cannot be null!");
-
-            // At some point we may want to get more elaborate here, but for
-            // now we'll just use ToString().
-            return string.Format(CultureInfo.InvariantCulture, "{0}", id);
-        }
-
-        /// <summary>
-        /// Returns a uri fragment representing the resource corresponding to the
-        /// table.
-        /// </summary>
-        /// <param name="tableName">
-        /// The name of the table.
-        /// </param>
-        /// <returns>
-        /// A URI fragment representing the resource.
-        /// </returns>
-        public static string GetUriFragment(string tableName)
-        {
-            Debug.Assert(!string.IsNullOrEmpty(tableName));
-
-            return CombinePaths(TableRouteSeparatorName, tableName);
-        }
-
-        /// <summary>
-        /// Returns a uri fragment representing the resource corresponding to the
-        /// given id in the table.
-        /// </summary>
-        /// <param name="tableName">
-        /// The name of the table.
-        /// </param>
-        /// <param name="id">
-        /// The id of the instance.
-        /// </param>
-        /// <returns>
-        /// A URI fragment representing the resource.
-        /// </returns>
-        public static string GetUriFragment(string tableName, object id)
-        {
-            Debug.Assert(!string.IsNullOrEmpty(tableName));
-            Debug.Assert(id != null);
-
-            string uriFragment = GetUriFragment(tableName);
-            return CombinePaths(uriFragment, ToUriConstant(id));
-        }
-
-        /// <summary>
         /// Converts a dictionary of string key-value pairs into a URI query string.
         /// </summary>
         /// <remarks>
@@ -97,10 +24,14 @@ namespace Microsoft.WindowsAzure.MobileServices
         /// <param name="parameters">
         /// The parameters from which to create the query string.
         /// </param>
+        /// <param name="useTableAPIRules">
+        /// A boolean to indicate if query string paramters should be checked that they do not contain system added
+        /// querystring. This currently only means to check if they match oData  queries (beginn with a $)
+        /// </param>
         /// <returns>
         /// A URI query string.
         /// </returns>
-        public static string GetQueryString(IDictionary<string, string> parameters)
+        public static string GetQueryString(IDictionary<string, string> parameters, bool useTableAPIRules = true)
         {
             string parametersString = null;
 
@@ -110,12 +41,12 @@ namespace Microsoft.WindowsAzure.MobileServices
                 string formatString = "{0}={1}";
                 foreach (var parameter in parameters)
                 {
-                    if (parameter.Key.StartsWith("$"))
+                    if (useTableAPIRules && parameter.Key.StartsWith("$"))
                     {
                         throw new ArgumentException(
                             string.Format(
                                 CultureInfo.InvariantCulture,
-                                Resources.MobileServiceTableUrlBuilder_InvalidParameterBeginsWithDollarSign,
+                                "{0} is an invalid user-defined query string parameter. User-defined query string parameters must not begin with a \'$\'.",
                                 parameter.Key),
                             "parameters");
                     }

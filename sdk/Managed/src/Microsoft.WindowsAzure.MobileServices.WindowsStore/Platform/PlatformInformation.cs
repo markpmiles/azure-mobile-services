@@ -2,6 +2,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // ----------------------------------------------------------------------------
 
+using System.Linq;
+using System.Reflection;
 using Windows.ApplicationModel;
 
 namespace Microsoft.WindowsAzure.MobileServices
@@ -15,7 +17,7 @@ namespace Microsoft.WindowsAzure.MobileServices
         /// <summary>
         /// A singleton instance of the <see cref="IPlatformInformation"/>.
         /// </summary>
-        private static IPlatformInformation instance = new PlatformInformation();
+        private static readonly IPlatformInformation instance = new PlatformInformation();
 
         /// <summary>
         /// A singleton instance of the <see cref="IPlatformInformation"/>.
@@ -69,6 +71,14 @@ namespace Microsoft.WindowsAzure.MobileServices
             get
             {
                 return false;
+            }
+        }
+
+        public string Version
+        {
+            get
+            {
+                return this.GetVersionFromAssemblyFileVersion();
             }
         }
     }

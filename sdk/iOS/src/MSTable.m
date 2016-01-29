@@ -8,16 +8,22 @@
 #import "MSJSONSerializer.h"
 #import "MSTableRequest.h"
 #import "MSTableConnection.h"
-
+#import "MSSDKFeatures.h"
+#import "MSTableInternal.h"
 
 #pragma mark * MSTable Implementation
 
+NSString *const MSSystemColumnId = @"id";
+NSString *const MSSystemColumnCreatedAt = @"__createdAt";
+NSString *const MSSystemColumnUpdatedAt = @"__updatedAt";
+NSString *const MSSystemColumnVersion = @"__version";
+NSString *const MSSystemColumnDeleted = @"__deleted";
 
 @implementation MSTable
 
 @synthesize client = client_;
 @synthesize name = name_;
-
+@synthesize features = features_;
 
 #pragma mark * Public Initializer Methods
 
@@ -29,6 +35,7 @@
     {
         client_ = client;
         name_ = tableName;
+        features_ = MSFeatureNone;
     }
     return self;
 }
@@ -51,6 +58,7 @@
                                    requestToInsertItem:item
                                    table:self
                                    parameters:parameters
+                                   features:self.features
                                    completion:completion];
     // Send the request
     if (request) {
@@ -69,15 +77,16 @@
 -(void) update:(NSDictionary *)item
     parameters:(NSDictionary *)parameters
     completion:(MSItemBlock)completion
-{
-    // Create the request
+{    
     MSTableItemRequest *request = [MSTableRequest
                                    requestToUpdateItem:item
                                    table:self
                                    parameters:parameters
+                                   features:self.features
                                    completion:completion];
+    
     // Send the request
-    if (request) {
+    if (request) {        
         MSTableConnection *connection =
             [MSTableConnection connectionWithItemRequest:request
                                               completion:completion];
@@ -99,6 +108,7 @@
                                      requestToDeleteItem:item
                                      table:self
                                      parameters:parameters
+                                     features:self.features
                                      completion:completion];
     // Send the request
     if (request) {
@@ -109,12 +119,12 @@
     }
 }
 
--(void) deleteWithId:(NSNumber *)itemId completion:(MSDeleteBlock)completion
+-(void) deleteWithId:(id)itemId completion:(MSDeleteBlock)completion
 {
     [self deleteWithId:itemId parameters:nil completion:completion];
 }
 
--(void) deleteWithId:(NSNumber *)itemId
+-(void) deleteWithId:(id)itemId
           parameters:(NSDictionary *)parameters
           completion:(MSDeleteBlock)completion
 {
@@ -123,6 +133,7 @@
                                      requestToDeleteItemWithId:itemId
                                      table:self
                                      parameters:parameters
+                                     features:self.features
                                      completion:completion];
     // Send the request
     if (request) {
@@ -133,16 +144,43 @@
     }
 }
 
+-(void)undelete:(NSDictionary *)item completion:(MSItemBlock)completion
+{
+    [self undelete:item parameters:nil completion:completion];
+}
+
+-(void)undelete:(NSDictionary *)item
+        parameters:(NSDictionary *)parameters
+        completion:(MSItemBlock)completion
+{
+    // Create the request
+    MSTableItemRequest *request = [MSTableRequest
+                                     requestToUndeleteItem:item
+                                     table:self
+                                     parameters:parameters
+                                   features:self.features
+                                     completion:completion];
+                                     
+    // Send the request
+    if (request) {
+        MSTableConnection *connection =
+        [MSTableConnection connectionWithItemRequest:request
+                                          completion:completion];
+        [connection start];
+    }
+    
+}
+
 
 #pragma mark * Public Read Methods
 
 
--(void) readWithId:(NSNumber *)itemId completion:(MSItemBlock)completion
+-(void) readWithId:(id)itemId completion:(MSItemBlock)completion
 {
     [self readWithId:itemId parameters:nil completion:completion];
 }
 
--(void) readWithId:(NSNumber *)itemId
+-(void) readWithId:(id)itemId
         parameters:(NSDictionary *)parameters
         completion:(MSItemBlock)completion
 {
@@ -164,16 +202,23 @@
 -(void) readWithQueryString:(NSString *)queryString
                  completion:(MSReadQueryBlock)completion
 {
+    return [self readWithQueryStringInternal:queryString features:MSFeatureTableReadRaw completion:completion];
+}
+
+-(void)readWithQueryStringInternal:(NSString *)queryString
+                          features:(MSFeatures)features
+                        completion:(MSReadQueryBlock)completion {
     // Create the request
     MSTableReadQueryRequest *request = [MSTableRequest
                                         requestToReadItemsWithQuery:queryString
                                         table:self
+                                        features:features
                                         completion:completion];
     // Send the request
     if (request) {
         MSTableConnection *connection =
-            [MSTableConnection connectionWithReadRequest:request
-                                              completion:completion];
+        [MSTableConnection connectionWithReadRequest:request
+                                          completion:completion];
         [connection start];
     }
 }
@@ -181,7 +226,7 @@
 -(void) readWithCompletion:(MSReadQueryBlock)completion
 {
     // Read without a query string
-    [self readWithQueryString:nil completion:completion];
+    [self readWithQueryStringInternal:nil features:self.features completion:completion];
 }
 
 -(void) readWithPredicate:(NSPredicate *) predicate

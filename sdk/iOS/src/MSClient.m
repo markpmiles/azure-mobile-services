@@ -10,10 +10,11 @@
 #import "MSAPIRequest.h"
 #import "MSAPIConnection.h"
 #import "MSJSONSerializer.h"
-
+#import "MSSyncContextInternal.h"
+#import "MSSyncTable.h"
+#import "MSPush.h"
 
 #pragma mark * MSClient Private Interface
-
 
 @interface MSClient ()
 
@@ -36,6 +37,14 @@
 @synthesize currentUser = currentUser_;
 @synthesize login = login_;
 @synthesize serializer = serializer_;
+@synthesize syncContext = syncContext_;
+- (void) setSyncContext:(MSSyncContext *)syncContext
+{
+    syncContext_ = syncContext;
+    if (syncContext) {
+        syncContext_.client = self;    
+    }
+}
 
 @synthesize installId = installId_;
 -(NSString *) installId
@@ -69,10 +78,12 @@
 +(MSClient *) clientWithApplicationURLString:(NSString *)urlString
                            applicationKey:(NSString *)key
 {
-    // NSURL will be nil for non-percent escaped url strings so we have to
-    // percent escape here
-    NSString  *urlStringEncoded =
-    [urlString stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
+    // NSURL will be nil for non-percent escaped url strings so we have to percent escape here
+    NSMutableCharacterSet *set = [[NSCharacterSet URLPathAllowedCharacterSet] mutableCopy];
+    [set formUnionWithCharacterSet:[NSCharacterSet URLHostAllowedCharacterSet]];
+    [set formUnionWithCharacterSet:[NSCharacterSet URLQueryAllowedCharacterSet]];
+    
+    NSString *urlStringEncoded = [urlString stringByAddingPercentEncodingWithAllowedCharacters:set];
     
     NSURL *url = [NSURL URLWithString:urlStringEncoded];
     return [MSClient clientWithApplicationURL:url applicationKey:key];
@@ -113,6 +124,7 @@
         applicationURL_ = url;
         applicationKey_ = [key copy];
         login_ = [[MSLogin alloc] initWithClient:self];
+        _push = [[MSPush alloc] initWithClient:self];
     }
     return self;
 }
@@ -126,6 +138,9 @@
     // Create a deep copy of the client (except for the filters)
     MSClient *newClient = [self copy];
     
+    // Filter clients should inherit the same sync context
+    newClient.syncContext = self.syncContext;
+    
     // Either copy or create a new filters array
     NSMutableArray *filters = [self.filters mutableCopy];
     if (!filters) {
@@ -137,6 +152,8 @@
     
     // Set the new filters on the copied client
     newClient.filters = filters;
+    
+    newClient.connectionDelegateQueue = self.connectionDelegateQueue;
     
     return newClient;
 }
@@ -180,7 +197,6 @@
 
 #pragma mark * Public Table Constructor Methods
 
-
 -(MSTable *) tableWithName:(NSString *)tableName
 {
     return [[MSTable alloc] initWithName:tableName client:self];
@@ -191,6 +207,10 @@
     return [self tableWithName:tableName];
 }
 
+-(MSSyncTable *) syncTableWithName:(NSString *)tableName
+{
+    return [[MSSyncTable alloc] initWithName:tableName client:self];
+}
 
 #pragma mark * Public invokeAPI Methods
 

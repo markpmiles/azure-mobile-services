@@ -9,7 +9,7 @@ using Newtonsoft.Json.Linq;
 namespace Microsoft.WindowsAzure.MobileServices
 {
     /// <summary>
-    /// Provides operations on a table for a Windows Azure Mobile Service.
+    /// Provides operations on a table for a Microsoft Azure Mobile Service.
     /// </summary>
     public interface IMobileServiceTable
     {
@@ -25,7 +25,12 @@ namespace Microsoft.WindowsAzure.MobileServices
         string TableName { get; }
 
         /// <summary>
-        /// Excutes a query against the table.
+        /// The Mobile Service system properties to be included with items.
+        /// </summary>
+        MobileServiceSystemProperties SystemProperties { get; set; }
+
+        /// <summary>
+        /// Executes a query against the table.
         /// </summary>
         /// <param name="query">
         /// A query to execute.
@@ -36,7 +41,7 @@ namespace Microsoft.WindowsAzure.MobileServices
         Task<JToken> ReadAsync(string query);
 
         /// <summary>
-        /// Excutes a query against the table.
+        /// Executes a query against the table.
         /// </summary>
         /// <param name="query">
         /// A query to execute.
@@ -45,10 +50,13 @@ namespace Microsoft.WindowsAzure.MobileServices
         /// A dictionary of user-defined parameters and values to include in 
         /// the request URI query string.
         /// </param>
+        /// <param name="wrapResult">
+        /// Specifies whether response should be formatted as JObject including extra response details e.g. link header
+        /// </param>
         /// <returns>
         /// A task that will return with results when the query finishes.
         /// </returns>
-        Task<JToken> ReadAsync(string query, IDictionary<string, string> parameters);
+        Task<JToken> ReadAsync(string query, IDictionary<string, string> parameters, bool wrapResult);
 
         /// <summary>
         /// Inserts an <paramref name="instance"/> into the table.
@@ -127,6 +135,24 @@ namespace Microsoft.WindowsAzure.MobileServices
         /// A task that will complete when the delete finishes.
         /// </returns>
         Task<JToken> DeleteAsync(JObject instance, IDictionary<string, string> parameters);
+
+        /// <summary>
+        /// Undeletes an <paramref name="instance"/> from the table. This requires the soft delete feature to be enabled on the Mobile Service. Visit <see href="http://go.microsoft.com/fwlink/?LinkId=507647">the link</see> for details.
+        /// </summary>
+        /// <param name="instance">The instance to undelete from the table.</param>
+        /// <returns>A task that will complete when the undelete finishes.</returns>
+        Task<JToken> UndeleteAsync(JObject instance);
+
+        /// <summary>
+        /// Undeletes an <paramref name="instance"/> from the table. This requires the soft delete feature to be enabled on the Mobile Service. Visit <see href="http://go.microsoft.com/fwlink/?LinkId=507647">the link</see> for details.
+        /// </summary>
+        /// <param name="instance">The instance to undelete from the table.</param>
+        /// <param name="parameters">
+        /// A dictionary of user-defined parameters and values to include in 
+        /// the request URI query string.
+        /// </param>
+        /// <returns>A task that will complete when the undelete finishes.</returns>
+        Task<JToken> UndeleteAsync(JObject instance, IDictionary<string, string> parameters);
 
         /// <summary>
         /// Executes a lookup against a table.

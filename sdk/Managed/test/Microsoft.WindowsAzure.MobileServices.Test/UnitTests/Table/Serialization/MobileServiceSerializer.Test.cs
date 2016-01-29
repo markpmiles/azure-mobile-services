@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Microsoft.WindowsAzure.MobileServices.TestFramework;
 using Newtonsoft.Json;
@@ -16,7 +17,16 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
     public class MobileServiceSerializerTests : TestBase
     {
         MobileServiceSerializer defaultSerializer;
-        
+        static readonly string MinDateTimeSerializedToJson;
+
+        static MobileServiceSerializerTests()
+        {
+            var settings = new JsonSerializerSettings();
+            settings.DateFormatHandling = DateFormatHandling.IsoDateFormat;
+            settings.DateFormatString = "yyyy-MM-dd'T'HH:mm:ss.fff'Z'";
+            MinDateTimeSerializedToJson = JsonConvert.SerializeObject(default(DateTime).ToUniversalTime(), settings);
+        }
+
         MobileServiceSerializer DefaultSerializer
         {
             get
@@ -52,7 +62,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                var actual = DefaultSerializer.GetId(input);
+                var actual = DefaultSerializer.GetId(input, allowDefault: true);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -71,15 +81,15 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                // Need to ensure that the type is registered as a table to force the id property check
-                DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(testCase.GetType());
-
                 var input = testCase.Item1;
                 string expected = testCase.Item2;
 
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(input.GetType());
+
                     DefaultSerializer.GetId(input);
                 }
                 catch (Exception e)
@@ -89,7 +99,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actualError.Message, expected);
             }
-        }        
+        }
 
         [TestMethod]
         public void HasDefaultId()
@@ -108,13 +118,13 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             foreach (var testCase in testCases)
             {
                 // Need to ensure that the type is registered as a table to force the id property check
-                DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(testCase.GetType());
+                DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(testCase.Item1.GetType());
 
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                var id = DefaultSerializer.GetId(input);
-                var actual = DefaultSerializer.IsDefaultId(id);
+                var id = DefaultSerializer.GetId(input, allowDefault: true);
+                var actual = MobileServiceSerializer.IsDefaultId(id);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -133,17 +143,17 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                // Need to ensure that the type is registered as a table to force the id property check
-                DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(testCase.GetType());
-
                 var input = testCase.Item1;
                 string expected = testCase.Item2;
 
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(input.GetType());
+
                     var id = DefaultSerializer.GetId(input);
-                    DefaultSerializer.IsDefaultId(id);
+                    MobileServiceSerializer.IsDefaultId(id);
                 }
                 catch (Exception e)
                 {
@@ -155,7 +165,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
         }
 
         [TestMethod]
-        public void ClearId()
+        public void SetIdToDefault()
         {
             List<Tuple<object, object>> testCases = new List<Tuple<object, object>>() {
                 new Tuple<object, object>(new BoolType() { Bool = true, Id = 0 }, 0),
@@ -165,13 +175,13 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             foreach (var testCase in testCases)
             {
                 // Need to ensure that the type is registered as a table to force the id property check
-                DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(testCase.GetType());
+                DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(testCase.Item1.GetType());
 
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                DefaultSerializer.ClearId(input);
-                var actual = DefaultSerializer.GetId(input);
+                DefaultSerializer.SetIdToDefault(input);
+                var actual = DefaultSerializer.GetId(input, allowDefault: true);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -183,9 +193,12 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             MobileServiceSerializer serializer = new MobileServiceSerializer();
             serializer.SerializerSettings.NullValueHandling = NullValueHandling.Ignore;
 
+            // Need to ensure that the type is registered as a table to force the id property check
+            serializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(PocoType));
+
             PocoType pocoType = new PocoType();
 
-            string actual = serializer.Serialize(pocoType);
+            string actual = serializer.Serialize(pocoType).ToString();
             Assert.AreEqual(actual, "{}");
         }
 
@@ -195,10 +208,13 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             MobileServiceSerializer serializer = new MobileServiceSerializer();
             serializer.SerializerSettings.Formatting = Formatting.Indented;
 
+            // Need to ensure that the type is registered as a table to force the id property check
+            serializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(PocoType));
+
             PocoType pocoType = new PocoType();
 
-            string actual = serializer.Serialize(pocoType);
-            Assert.AreEqual(actual, "{\r\n  \"PublicField\": null,\r\n  \"PublicProperty\": null\r\n}");
+            string actual = serializer.Serialize(pocoType).ToString();
+            Assert.AreEqual(actual, "{" + Environment.NewLine + "  \"PublicField\": null," + Environment.NewLine + "  \"PublicProperty\": null" + Environment.NewLine + "}");
         }
 
         [TestMethod]
@@ -207,9 +223,12 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             MobileServiceSerializer serializer = new MobileServiceSerializer();
             serializer.SerializerSettings.CamelCasePropertyNames = true;
 
+            // Need to ensure that the type is registered as a table to force the id property check
+            serializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(PocoType));
+
             PocoType pocoType = new PocoType();
 
-            string actual = serializer.Serialize(pocoType);
+            string actual = serializer.Serialize(pocoType).ToString(Formatting.None);
             Assert.AreEqual(actual, "{\"publicField\":null,\"publicProperty\":null}");
         }
 
@@ -229,7 +248,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -253,7 +272,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 BoolType actual = new BoolType();
@@ -285,17 +304,18 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 "{\"Bool\":\"I can't be parsed\"}"
             };
 
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(BoolType));
 
             foreach (var testCase in testCases)
             {
-                var input = testCase;
+                var input = JToken.Parse(testCase);
 
                 BoolType actual = new BoolType();
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(BoolType));
+
                     DefaultSerializer.Deserialize(input, actual);
                 }
                 catch (Exception e)
@@ -303,7 +323,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                     actualError = e;
                 }
 
-                Assert.AreEqual(actualError.Message, "Error converting value \"I can't be parsed\" to type 'System.Boolean'. Path 'Bool', line 1, position 27.");
+                Assert.AreEqual(actualError.Message, "Error converting value \"I can't be parsed\" to type 'System.Boolean'. Path 'Bool', line 2, position 30.");
             }
         }
 
@@ -324,7 +344,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -349,7 +369,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 ByteType actual = new ByteType();
@@ -357,7 +377,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.Byte, expected.Byte);
 
-                if (input != "{}")
+                if (testCase.Item2 != "{}")
                 {
                     actual = new ByteType();
                     actual.Byte = 15;
@@ -366,7 +386,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.Byte, expected.Byte);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<ByteType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual.Byte, expected.Byte);
@@ -381,23 +401,23 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
         public void ByteDeserializationNegative()
         {
             List<Tuple<string, string>> testCases = new List<Tuple<string, string>>() {
-                new Tuple<string, string>("{\"Byte\":256}", "Error converting value 256 to type 'System.Byte'. Path 'Byte', line 1, position 11."),
-                new Tuple<string, string>("{\"Byte\":\"256\"}","Error converting value \"256\" to type 'System.Byte'. Path 'Byte', line 1, position 13."),
-                new Tuple<string, string>("{\"Byte\":-1}","Error converting value -1 to type 'System.Byte'. Path 'Byte', line 1, position 10."),
+                new Tuple<string, string>("{\"Byte\":256}", "Error converting value 256 to type 'System.Byte'. Path 'Byte', line 2, position 14."),
+                new Tuple<string, string>("{\"Byte\":\"256\"}","Error converting value \"256\" to type 'System.Byte'. Path 'Byte', line 2, position 16."),
+                new Tuple<string, string>("{\"Byte\":-1}","Error converting value -1 to type 'System.Byte'. Path 'Byte', line 2, position 13."),
             };
-
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(ByteType));
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item1;
+                var input = JToken.Parse(testCase.Item1);
                 var expected = testCase.Item2;
 
                 ByteType actual = new ByteType();
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(ByteType));
+
                     DefaultSerializer.Deserialize(input, actual);
                 }
                 catch (Exception e)
@@ -428,7 +448,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -455,7 +475,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 SByteType actual = new SByteType();
@@ -463,7 +483,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.SByte, expected.SByte);
 
-                if (input != "{}")
+                if (testCase.Item2 != "{}")
                 {
                     actual = new SByteType();
                     actual.SByte = 12;
@@ -472,7 +492,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.SByte, expected.SByte);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<SByteType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual.SByte, expected.SByte);
@@ -492,9 +512,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 new Tuple<string, string>("{\"SByte\":-129}","Error converting value -129 to type 'System.SByte'. Path 'SByte', line 1, position 13."),
             };
 
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(SByteType));
-
             foreach (var testCase in testCases)
             {
                 var input = testCase.Item1;
@@ -504,6 +521,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(SByteType));
+
                     DefaultSerializer.Deserialize(input, actual);
                 }
                 catch (Exception e)
@@ -532,7 +552,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -557,7 +577,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 UShortType actual = new UShortType();
@@ -565,7 +585,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.UShort, expected.UShort);
 
-                if (input != "{}")
+                if (testCase.Item2 != "{}")
                 {
                     actual = new UShortType();
                     actual.UShort = 10;
@@ -574,7 +594,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.UShort, expected.UShort);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<UShortType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual.UShort, expected.UShort);
@@ -594,9 +614,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 new Tuple<string, string>("{\"UShort\":-1}","Error converting value -1 to type 'System.UInt16'. Path 'UShort', line 1, position 12."),
             };
 
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(UShortType));
-
             foreach (var testCase in testCases)
             {
                 var input = testCase.Item1;
@@ -606,6 +623,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(UShortType));
+
                     DefaultSerializer.Deserialize(input, actual);
                 }
                 catch (Exception e)
@@ -636,7 +656,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -662,7 +682,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 IntType actual = new IntType();
@@ -670,7 +690,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.Id, expected.Id);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<IntType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual.Id, expected.Id);
@@ -689,9 +709,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 new Tuple<string, string>("{\"id\":-2147483649}", "Error converting value -2147483649 to type 'System.Int32'. Path 'id', line 1, position 17."),
             };
 
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(IntType));
-
             foreach (var testCase in testCases)
             {
                 var input = testCase.Item1;
@@ -701,6 +718,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(IntType));
+
                     DefaultSerializer.Deserialize(input, actual);
                 }
                 catch (Exception e)
@@ -729,8 +749,8 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
-                
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
+
                 Assert.AreEqual(actual, expected);
             }
         }
@@ -749,13 +769,13 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 new Tuple<UIntType, string>(new UIntType() { UInt = UInt32.MaxValue }, "{\"UInt\":4294967295}"),
                 new Tuple<UIntType, string>(new UIntType() { UInt = UInt32.MaxValue }, "{\"UInt\":\"4294967295\"}"),
             };
-            
+
             // Need to ensure that the type is registered as a table to force the id property check
             DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(UIntType));
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 UIntType actual = new UIntType();
@@ -763,7 +783,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.UInt, expected.UInt);
 
-                if (input != "{}")
+                if (testCase.Item2 != "{}")
                 {
                     actual = new UIntType();
                     actual.UInt = 12;
@@ -772,7 +792,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.UInt, expected.UInt);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<UIntType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual.UInt, expected.UInt);
@@ -785,15 +805,12 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
         [TestMethod]
         public void UIntDeserializationNegative()
-        {        
+        {
             List<Tuple<string, string>> testCases = new List<Tuple<string, string>>() {
                 new Tuple<string, string>("{\"UInt\":4294967296}", "Error converting value 4294967296 to type 'System.UInt32'. Path 'UInt', line 1, position 18."),
                 new Tuple<string, string>("{\"UInt\":\"4294967296\"}", "Error converting value \"4294967296\" to type 'System.UInt32'. Path 'UInt', line 1, position 20."),
                 new Tuple<string, string>("{\"UInt\":-1}", "Error converting value -1 to type 'System.UInt32'. Path 'UInt', line 1, position 10."),
             };
-
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(UIntType));
 
             foreach (var testCase in testCases)
             {
@@ -804,6 +821,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(UIntType));
+
                     DefaultSerializer.Deserialize(input, actual);
                 }
                 catch (Exception e)
@@ -837,7 +857,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -854,9 +874,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 new Tuple<LongType, string>(new LongType() { Long = long.MinValue }, "The value -9223372036854775808 for member Long is outside the valid range for numeric columns.")
             };
 
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(LongType));
-
             foreach (var testCase in testCases)
             {
                 var input = testCase.Item1;
@@ -864,6 +881,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(LongType));
+
                     DefaultSerializer.Serialize(input);
                 }
                 catch (Exception e)
@@ -899,7 +919,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 LongType actual = new LongType();
@@ -907,7 +927,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.Long, expected.Long);
 
-                if (input != "{}")
+                if (testCase.Item2 != "{}")
                 {
                     actual = new LongType();
                     actual.Long = 62;
@@ -916,7 +936,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.Long, expected.Long);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<LongType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual.Long, expected.Long);
@@ -927,8 +947,10 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             }
         }
 
+        [Tag("notWP81")]
         [Tag("notWP80")]
         [Tag("notWP75")]
+        [Tag("notXamarin")]
         [TestMethod]
         public void LongDeserializationNegative()
         {
@@ -936,9 +958,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 new Tuple<string, string>("{\"Long\":9.2233720368547758E+18}","Error converting value 9.22337203685478E+18 to type 'System.Int64'. Path 'Long', line 1, position 30."),  // Fails because this will be read as a double, which then doesn't convert into a long      
                 new Tuple<string, string>("{\"Long\":9223372036854775808}","Error converting value 9223372036854775808 to type 'System.Int64'. Path 'Long', line 1, position 27."), // long.MaxValue + 1
             };
-
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(LongType));
 
             foreach (var testCase in testCases)
             {
@@ -949,6 +968,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(LongType));
+
                     DefaultSerializer.Deserialize(input, actual);
                 }
                 catch (Exception e)
@@ -979,7 +1001,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -994,9 +1016,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 new Tuple<ULongType, string>(new ULongType() { ULong = ulong.MaxValue },"The value 18446744073709551615 for member ULong is outside the valid range for numeric columns.") // ulong.MaxValue
             };
 
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(ULongType));
-
             foreach (var testCase in testCases)
             {
                 var input = testCase.Item1;
@@ -1004,6 +1023,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(ULongType));
+
                     DefaultSerializer.Serialize(input);
                 }
                 catch (Exception e)
@@ -1038,7 +1060,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 ULongType actual = new ULongType();
@@ -1046,7 +1068,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.ULong, expected.ULong);
 
-                if (input != "{}")
+                if (testCase.Item2 != "{}")
                 {
                     actual = new ULongType();
                     actual.ULong = 19;
@@ -1055,7 +1077,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.ULong, expected.ULong);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<ULongType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual.ULong, expected.ULong);
@@ -1066,8 +1088,10 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             }
         }
 
+        [Tag("notWP81")]
         [Tag("notWP80")]
         [Tag("notWP75")]
+        [Tag("notXamarin")]
         [TestMethod]
         public void ULongDeserializationNegative()
         {
@@ -1076,9 +1100,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 new Tuple<string, string>("{\"ULong\":-1}","Error converting value -1 to type 'System.UInt64'. Path 'ULong', line 1, position 11."),
             };
 
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(ULongType));
- 
             foreach (var testCase in testCases)
             {
                 var input = testCase.Item1;
@@ -1088,18 +1109,22 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(ULongType));
+
                     DefaultSerializer.Deserialize(input, actual);
                 }
                 catch (Exception e)
                 {
                     actualError = e;
                 }
-                
+
                 Assert.AreEqual(actualError.Message, expected);
             }
         }
 
-        [TestMethod]
+        [Tag("notXamarin")]
+        [TestMethod]        
         public void FloatSerialization()
         {
             List<Tuple<FloatType, string>> testCases = new List<Tuple<FloatType, string>>() {
@@ -1120,7 +1145,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -1162,7 +1187,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 FloatType actual = new FloatType();
@@ -1181,7 +1206,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                     Assert.AreEqual(actual.Float, expected.Float);
                 }
 
-                if (input != "{}")
+                if (testCase.Item2 != "{}")
                 {
                     actual = new FloatType();
                     actual.Float = 34.6F;
@@ -1201,7 +1226,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                     }
                 }
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<FloatType>(json).FirstOrDefault();
 
                 if (float.IsPositiveInfinity(expected.Float))
@@ -1235,6 +1260,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
         }
 
         [Tag("notWP75")]
+        [Tag("notXamarin")]
         [TestMethod]
         public void FloatDeserializationNegative()
         {
@@ -1242,9 +1268,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 "{\"Float\":1.7976931348623157E+309}",      // Larger double.MaxValue
                 "{\"Float\":-1.7976931348623157E+309}",     // Larger double.MinValue
             };
-
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(FloatType));
 
             foreach (var testCase in testCases)
             {
@@ -1254,6 +1277,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(FloatType));
+
                     DefaultSerializer.Deserialize(input, actual);
                 }
                 catch (Exception e)
@@ -1261,7 +1287,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                     actualError = e;
                 }
 
-                Assert.AreEqual(actualError.Message, "Value was either too large or too small for a Double.");
+                Assert.Contains(actualError.Message, "is not a valid number. Path 'Float'");
             }
         }
 
@@ -1286,7 +1312,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -1319,7 +1345,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 DoubleType actual = new DoubleType();
@@ -1338,7 +1364,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                     Assert.AreEqual(actual.Double, expected.Double);
                 }
 
-                if (input != "{}")
+                if (testCase.Item2 != "{}")
                 {
                     actual = new DoubleType();
                     actual.Double = 34.6;
@@ -1358,7 +1384,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                     }
                 }
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<DoubleType>(json).FirstOrDefault();
 
                 if (double.IsPositiveInfinity(expected.Double))
@@ -1391,17 +1417,15 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             }
         }
 
-        [TestMethod]
+        [Tag("notXamarin")]        
         [Tag("notWP75")]
+        [TestMethod]
         public void DoubleDeserializationNegative()
         {
             List<string> testCases = new List<string>() {
                 "{\"Double\":1.7976931348623157E+309}",
                 "{\"Double\":-1.7976931348623157E+309}",
             };
-
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(DoubleType));
 
             foreach (var testCase in testCases)
             {
@@ -1411,6 +1435,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(DoubleType));
+
                     DefaultSerializer.Deserialize(input, actual);
                 }
                 catch (Exception e)
@@ -1418,7 +1445,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                     actualError = e;
                 }
 
-                Assert.AreEqual(actualError.Message, "Value was either too large or too small for a Double.");
+                Assert.Contains(actualError.Message, "is not a valid number. Path 'Double'");
             }
         }
 
@@ -1473,7 +1500,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -1524,9 +1551,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 new Tuple<DecimalType, string>(new DecimalType() { Decimal = 10000000000000000m }, string.Format(errorString, "10000000000000000")),
             };
 
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(DecimalType));
-
             foreach (var testCase in testCases)
             {
                 var input = testCase.Item1;
@@ -1534,6 +1558,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(DecimalType));
+
                     DefaultSerializer.Serialize(input);
                 }
                 catch (Exception e)
@@ -1570,7 +1597,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 DecimalType actual = new DecimalType();
@@ -1578,7 +1605,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.Decimal, expected.Decimal);
 
-                if (input != "{}")
+                if (testCase.Item2 != "{}")
                 {
                     actual = new DecimalType();
                     actual.Decimal = 34.5M;
@@ -1587,7 +1614,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.Decimal, expected.Decimal);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<DecimalType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual.Decimal, expected.Decimal);
@@ -1606,9 +1633,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 new Tuple<string, string>("{\"Decimal\":7.9228162514264338E+28}","Error converting value 7.92281625142643E+28 to type 'System.Decimal'. Path 'Decimal', line 1, position 33."), 
             };
 
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(DecimalType));
-
             foreach (var testCase in testCases)
             {
                 var input = testCase.Item1;
@@ -1618,6 +1642,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(DecimalType));
+
                     DefaultSerializer.Deserialize(input, actual);
                 }
                 catch (Exception e)
@@ -1653,7 +1680,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -1685,7 +1712,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 StringType actual = new StringType();
@@ -1693,7 +1720,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.String, expected.String);
 
-                if (input != "{}")
+                if (testCase.Item2 != "{}")
                 {
                     actual = new StringType();
                     actual.String = "xyz";
@@ -1702,7 +1729,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.String, expected.String);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<StringType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual.String, expected.String);
@@ -1712,7 +1739,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Assert.AreEqual(actual.String, expected.String);
             }
         }
-        
+
         [TestMethod]
         public void CharSerialization()
         {
@@ -1735,8 +1762,8 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
-                
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
+
                 Assert.AreEqual(actual, expected);
             }
         }
@@ -1765,7 +1792,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 CharType actual = new CharType();
@@ -1773,7 +1800,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.Char, expected.Char);
 
-                if (input != "{}")
+                if (testCase.Item2 != "{}")
                 {
                     actual = new CharType();
                     actual.Char = 'a';
@@ -1782,7 +1809,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.Char, expected.Char);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<CharType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual.Char, expected.Char);
@@ -1802,9 +1829,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 new Tuple<string, string>("{\"Char\":true}","Error converting value True to type 'System.Char'. Path 'Char', line 1, position 12.")
             };
 
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(CharType));
-
             foreach (var testCase in testCases)
             {
                 var input = testCase.Item1;
@@ -1814,6 +1838,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(CharType));
+
                     DefaultSerializer.Deserialize(input, actual);
                 }
                 catch (Exception e)
@@ -1842,7 +1869,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -1866,7 +1893,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 UriType actual = new UriType();
@@ -1874,7 +1901,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.Uri, expected.Uri);
 
-                if (input != "{}")
+                if (testCase.Item2 != "{}")
                 {
                     actual = new UriType();
                     actual.Uri = new Uri("http://xyz.com");
@@ -1883,7 +1910,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.Uri, expected.Uri);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<UriType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual.Uri, expected.Uri);
@@ -1902,9 +1929,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 new Tuple<string, string>("{\"Uri\":true}", "Error converting value True to type 'System.Uri'. Path 'Uri', line 1, position 11."),
             };
 
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(UriType));
-
             foreach (var testCase in testCases)
             {
                 var input = testCase.Item1;
@@ -1914,6 +1938,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(UriType));
+
                     DefaultSerializer.Deserialize(input, actual);
                 }
                 catch (Exception e)
@@ -1925,18 +1952,39 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             }
         }
 
+        private static string ExpectedDateTimeSerialization(DateTime dt)
+        {
+            DateTime utc = dt.ToUniversalTime();
+            return "\"" + utc.ToString("yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'fffK", CultureInfo.InvariantCulture) + "\"";
+        }
+
+        private static string ExpectedDateTimeOffsetSerialization(DateTimeOffset dto)
+        {
+            DateTime utc = dto.ToUniversalTime().UtcDateTime;
+            return "\"" + utc.ToString("yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'fffK", CultureInfo.InvariantCulture) + "\"";
+        }
+
         [TestMethod]
         public void DateTimeSerialization()
         {
-            List<Tuple<DateTimeType, string>> testCases = new List<Tuple<DateTimeType, string>>() {
-                new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime() }, "{\"DateTime\":\"0001-01-01T08:00:00.000Z\"}"),
-                new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime(1999, 12, 31, 23, 59, 59) }, "{\"DateTime\":\"2000-01-01T07:59:59.000Z\"}"),
-                new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime(2005, 3, 14, 12, 34, 16, DateTimeKind.Local) }, "{\"DateTime\":\"2005-03-14T20:34:16.000Z\"}"),
-                new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime(2005, 4, 14, 12, 34, 16, DateTimeKind.Unspecified) }, "{\"DateTime\":\"2005-04-14T19:34:16.000Z\"}"),
-                new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime(2005, 3, 14, 12, 34, 16, DateTimeKind.Local) }, "{\"DateTime\":\"2005-03-14T20:34:16.000Z\"}"),
-                new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime(2005, 5, 14, 12, 34, 16, DateTimeKind.Utc) }, "{\"DateTime\":\"2005-05-14T12:34:16.000Z\"}"),
-                new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime(2012, 2, 29, 12, 0, 0, DateTimeKind.Utc) }, "{\"DateTime\":\"2012-02-29T12:00:00.000Z\"}"), // Leap Day
+            List<DateTime> dates = new List<DateTime>
+            {
+                new DateTime(1999, 12, 31, 23, 59, 59),
+                new DateTime(2005, 3, 14, 12, 34, 16, DateTimeKind.Local),
+                new DateTime(2005, 4, 14, 12, 34, 16, DateTimeKind.Unspecified),
+                new DateTime(2005, 3, 14, 12, 34, 16, DateTimeKind.Local),
+                new DateTime(2005, 5, 14, 12, 34, 16, DateTimeKind.Utc),
+                new DateTime(2012, 2, 29, 12, 0, 0, DateTimeKind.Utc)
             };
+            List<Tuple<DateTimeType, string>> testCases = new List<Tuple<DateTimeType, string>>
+            {
+                new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime() }, "{\"DateTime\":" + MinDateTimeSerializedToJson + "}"),
+            };
+            foreach (var date in dates) {
+                testCases.Add(new Tuple<DateTimeType,string>(
+                    new DateTimeType { DateTime = date },
+                    "{\"DateTime\":" + ExpectedDateTimeSerialization(date) + "}"));
+            }
 
             // Need to ensure that the type is registered as a table to force the id property check
             DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(DateTimeType));
@@ -1946,7 +1994,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -1955,52 +2003,64 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
         [TestMethod]
         public void DateTimeDeserialization()
         {
-            List<Tuple<DateTimeType, string>> testCases = new List<Tuple<DateTimeType, string>>() {
+            List<Tuple<DateTimeType, string>> testCases = new List<Tuple<DateTimeType, string>>()
+            {
                 new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime() }, "{}"),
                 new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime() }, "{\"DateTime\":null}"),
-                new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime() }, "{\"DateTime\":\"0001-01-01T08:00:00.000Z\"}"),
-                new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime(1999, 12, 31, 23, 59, 59) }, "{\"DateTime\":\"2000-01-01T07:59:59.000Z\"}"),
-                new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime(2005, 3, 14, 12, 34, 16, DateTimeKind.Local).ToLocalTime() }, "{\"DateTime\":\"2005-03-14T20:34:16.000Z\"}"),
-                new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime(2005, 4, 14, 12, 34, 16, DateTimeKind.Unspecified) }, "{\"DateTime\":\"2005-04-14T19:34:16.000Z\"}"),
-                new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime(2005, 3, 14, 12, 34, 16, DateTimeKind.Local) }, "{\"DateTime\":\"2005-03-14T20:34:16.000Z\"}"),
-                new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime(2005, 5, 14, 12, 34, 16, DateTimeKind.Utc).ToLocalTime() }, "{\"DateTime\":\"2005-05-14T12:34:16.000Z\"}"),
-                new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime(2012, 2, 29, 12, 0, 0, DateTimeKind.Utc).ToLocalTime() }, "{\"DateTime\":\"2012-02-29T12:00:00.000Z\"}"), // Leap Day
+                new Tuple<DateTimeType, string>(new DateTimeType() { DateTime = new DateTime() }, "{\"DateTime\":" + MinDateTimeSerializedToJson + "}")
             };
+
+            List<DateTime> dates = new List<DateTime>
+            {
+                new DateTime(1999, 12, 31, 23, 59, 59),
+                new DateTime(2005, 3, 14, 12, 34, 16, DateTimeKind.Local).ToLocalTime(),
+                new DateTime(2005, 4, 14, 12, 34, 16, DateTimeKind.Unspecified),
+                new DateTime(2005, 3, 14, 12, 34, 16, DateTimeKind.Local),
+                new DateTime(2005, 5, 14, 12, 34, 16, DateTimeKind.Utc).ToLocalTime(),
+                new DateTime(2012, 2, 29, 12, 0, 0, DateTimeKind.Utc).ToLocalTime() // leap day
+            };
+
+            foreach (var date in dates) {
+                testCases.Add(new Tuple<DateTimeType,string>(
+                    new DateTimeType { DateTime = date },
+                    "{\"DateTime\":" + ExpectedDateTimeSerialization(date) + "}"));
+            }
 
             // Need to ensure that the type is registered as a table to force the id property check
             DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(DateTimeType));
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 DateTimeType actual = new DateTimeType();
                 DefaultSerializer.Deserialize(input, actual);
 
-                Assert.AreEqual(actual.DateTime, expected.DateTime);
+                Assert.AreEqual(actual.DateTime.ToUniversalTime(), expected.DateTime.ToUniversalTime());
 
-                if (input != "{}")
+                if (testCase.Item2 != "{}")
                 {
                     actual = new DateTimeType();
                     actual.DateTime = DateTime.Now;
                     DefaultSerializer.Deserialize(input, actual);
                 }
 
-                Assert.AreEqual(actual.DateTime, expected.DateTime);
+                Assert.AreEqual(actual.DateTime.ToUniversalTime(), expected.DateTime.ToUniversalTime());
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<DateTimeType>(json).FirstOrDefault();
 
-                Assert.AreEqual(actual.DateTime, expected.DateTime);
+                Assert.AreEqual(actual.DateTime.ToUniversalTime(), expected.DateTime.ToUniversalTime());
 
                 actual = (DateTimeType)DefaultSerializer.Deserialize<DateTimeType>(input);
 
-                Assert.AreEqual(actual.DateTime, expected.DateTime);
+                Assert.AreEqual(actual.DateTime.ToUniversalTime(), expected.DateTime.ToUniversalTime());
             }
         }
 
         [Tag("notWP75")]
+        [Tag("notXamarin")]
         [TestMethod]
         public void DateTimeDeserializationNegative()
         {
@@ -2011,9 +2071,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 new Tuple<string, string>("{\"DateTime\":\"\t\"}", "String was not recognized as a valid DateTime."),
             };
 
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(DateTimeType));
-
             foreach (var testCase in testCases)
             {
                 var input = testCase.Item1;
@@ -2023,6 +2080,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(DateTimeType));
+
                     DefaultSerializer.Deserialize(input, actual);
                 }
                 catch (Exception e)
@@ -2035,17 +2095,28 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
         }
 
         [TestMethod]
+        [Tag("foo")]
         public void DateTimeOffsetSerialization()
         {
-            List<Tuple<DateTimeOffsetType, string>> testCases = new List<Tuple<DateTimeOffsetType, string>>() {
-                new Tuple<DateTimeOffsetType, string>(new DateTimeOffsetType() { DateTimeOffset = new DateTimeOffset() }, "{\"DateTimeOffset\":\"0001-01-01T00:00:00.000Z\"}"),
-                new Tuple<DateTimeOffsetType, string>(new DateTimeOffsetType() { DateTimeOffset = new DateTimeOffset(new DateTime(1999, 12, 31, 23, 59, 59)) }, "{\"DateTimeOffset\":\"2000-01-01T07:59:59.000Z\"}"),
-                new Tuple<DateTimeOffsetType, string>(new DateTimeOffsetType() { DateTimeOffset = new DateTimeOffset(new DateTime(2005, 3, 14, 12, 34, 16, DateTimeKind.Local)) }, "{\"DateTimeOffset\":\"2005-03-14T20:34:16.000Z\"}"),
-                new Tuple<DateTimeOffsetType, string>(new DateTimeOffsetType() { DateTimeOffset = new DateTimeOffset(new DateTime(2005, 4, 14, 12, 34, 16, DateTimeKind.Unspecified)) }, "{\"DateTimeOffset\":\"2005-04-14T19:34:16.000Z\"}"),
-                new Tuple<DateTimeOffsetType, string>(new DateTimeOffsetType() { DateTimeOffset = new DateTimeOffset(new DateTime(2005, 3, 14, 12, 34, 16, DateTimeKind.Local)) }, "{\"DateTimeOffset\":\"2005-03-14T20:34:16.000Z\"}"),
-                new Tuple<DateTimeOffsetType, string>(new DateTimeOffsetType() { DateTimeOffset = new DateTimeOffset(new DateTime(2005, 5, 14, 12, 34, 16, DateTimeKind.Utc)) }, "{\"DateTimeOffset\":\"2005-05-14T12:34:16.000Z\"}"),
-                new Tuple<DateTimeOffsetType, string>(new DateTimeOffsetType() { DateTimeOffset = new DateTimeOffset(new DateTime(2012, 2, 29, 12, 0, 0, DateTimeKind.Utc)) }, "{\"DateTimeOffset\":\"2012-02-29T12:00:00.000Z\"}"), // Leap Day
+            List<Tuple<DateTimeOffsetType, string>> testCases = new List<Tuple<DateTimeOffsetType, string>>();
+
+            List<DateTimeOffset> dates = new List<DateTimeOffset>
+            {
+                new DateTimeOffset(),
+                new DateTimeOffset(new DateTime(1999, 12, 31, 23, 59, 59)),
+                new DateTimeOffset(new DateTime(2005, 3, 14, 12, 34, 16, DateTimeKind.Local)),
+                new DateTimeOffset(new DateTime(2005, 4, 14, 12, 34, 16, DateTimeKind.Unspecified)),
+                new DateTimeOffset(new DateTime(2005, 3, 14, 12, 34, 16, DateTimeKind.Local)),
+                new DateTimeOffset(new DateTime(2005, 5, 14, 12, 34, 16, DateTimeKind.Utc)),
+                new DateTimeOffset(new DateTime(2012, 2, 29, 12, 0, 0, DateTimeKind.Utc)), // leap day
             };
+
+            foreach (var date in dates)
+            {
+                testCases.Add(new Tuple<DateTimeOffsetType,string>(
+                    new DateTimeOffsetType { DateTimeOffset = date },
+                    "{\"DateTimeOffset\":" + ExpectedDateTimeOffsetSerialization(date) + "}"));
+            }
 
             // Need to ensure that the type is registered as a table to force the id property check
             DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(DateTimeOffsetType));
@@ -2055,7 +2126,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -2064,51 +2135,65 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
         [TestMethod]
         public void DateTimeOffsetDeserialization()
         {
-            List<Tuple<DateTimeOffsetType, string>> testCases = new List<Tuple<DateTimeOffsetType, string>>() {
+            List<Tuple<DateTimeOffsetType, string>> testCases = new List<Tuple<DateTimeOffsetType, string>>()
+            {
                 new Tuple<DateTimeOffsetType, string>(new DateTimeOffsetType() { DateTimeOffset = new DateTimeOffset() }, "{}"),
                 new Tuple<DateTimeOffsetType, string>(new DateTimeOffsetType() { DateTimeOffset = new DateTimeOffset() }, "{\"DateTimeOffset\":null}"),
-                new Tuple<DateTimeOffsetType, string>(new DateTimeOffsetType() { DateTimeOffset = new DateTimeOffset(new DateTime(1999, 12, 31, 23, 59, 59)).ToLocalTime() }, "{\"DateTimeOffset\":\"2000-01-01T07:59:59.000Z\"}"),
-                new Tuple<DateTimeOffsetType, string>(new DateTimeOffsetType() { DateTimeOffset = new DateTimeOffset(new DateTime(2005, 3, 14, 12, 34, 16, DateTimeKind.Local)).ToLocalTime() }, "{\"DateTimeOffset\":\"2005-03-14T20:34:16.000Z\"}"),
-                new Tuple<DateTimeOffsetType, string>(new DateTimeOffsetType() { DateTimeOffset = new DateTimeOffset(new DateTime(2005, 4, 14, 12, 34, 16, DateTimeKind.Unspecified)).ToLocalTime() }, "{\"DateTimeOffset\":\"2005-04-14T19:34:16.000Z\"}"),
-                new Tuple<DateTimeOffsetType, string>(new DateTimeOffsetType() { DateTimeOffset = new DateTimeOffset(new DateTime(2005, 3, 14, 12, 34, 16, DateTimeKind.Local)).ToLocalTime() }, "{\"DateTimeOffset\":\"2005-03-14T20:34:16.000Z\"}"),
-                new Tuple<DateTimeOffsetType, string>(new DateTimeOffsetType() { DateTimeOffset = new DateTimeOffset(new DateTime(2005, 5, 14, 12, 34, 16, DateTimeKind.Utc)).ToLocalTime() }, "{\"DateTimeOffset\":\"2005-05-14T12:34:16.000Z\"}"),
-                new Tuple<DateTimeOffsetType, string>(new DateTimeOffsetType() { DateTimeOffset = new DateTimeOffset(new DateTime(2012, 2, 29, 12, 0, 0, DateTimeKind.Utc)).ToLocalTime() }, "{\"DateTimeOffset\":\"2012-02-29T12:00:00.000Z\"}"), // Leap Day
             };
+
+            List<DateTimeOffset> dates = new List<DateTimeOffset>
+            {
+                new DateTimeOffset(new DateTime(1999, 12, 31, 23, 59, 59)).ToLocalTime(),
+                new DateTimeOffset(new DateTime(2005, 3, 14, 12, 34, 16, DateTimeKind.Local)).ToLocalTime(),
+                new DateTimeOffset(new DateTime(2005, 4, 14, 12, 34, 16, DateTimeKind.Unspecified)).ToLocalTime(),
+                new DateTimeOffset(new DateTime(2005, 3, 14, 12, 34, 16, DateTimeKind.Local)).ToLocalTime(),
+                new DateTimeOffset(new DateTime(2005, 5, 14, 12, 34, 16, DateTimeKind.Utc)).ToLocalTime(),
+                new DateTimeOffset(new DateTime(2012, 2, 29, 12, 0, 0, DateTimeKind.Utc)).ToLocalTime(), // leap day
+            };
+
+            foreach (var date in dates)
+            {
+                testCases.Add(new Tuple<DateTimeOffsetType,string>(
+                    new DateTimeOffsetType { DateTimeOffset = date },
+                    "{\"DateTimeOffset\":" + ExpectedDateTimeOffsetSerialization(date) + "}"));
+            }
 
             // Need to ensure that the type is registered as a table to force the id property check
             DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(DateTimeOffsetType));
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 DateTimeOffsetType actual = new DateTimeOffsetType();
                 DefaultSerializer.Deserialize(input, actual);
 
-                Assert.AreEqual(actual.DateTimeOffset, expected.DateTimeOffset);
+                Assert.AreEqual(actual.DateTimeOffset.ToLocalTime(), expected.DateTimeOffset.ToLocalTime());
+                Assert.AreEqual(actual.DateTimeOffset.ToUniversalTime(), expected.DateTimeOffset.ToUniversalTime());
 
-                if (input != "{}")
+                if (testCase.Item2 != "{}")
                 {
                     actual = new DateTimeOffsetType();
                     actual.DateTimeOffset = DateTimeOffset.Now;
                     DefaultSerializer.Deserialize(input, actual);
                 }
 
-                Assert.AreEqual(actual.DateTimeOffset, expected.DateTimeOffset);
+                Assert.AreEqual(actual.DateTimeOffset.ToUniversalTime(), expected.DateTimeOffset.ToUniversalTime());
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<DateTimeOffsetType>(json).FirstOrDefault();
 
-                Assert.AreEqual(actual.DateTimeOffset, expected.DateTimeOffset);
+                Assert.AreEqual(actual.DateTimeOffset.ToUniversalTime(), expected.DateTimeOffset.ToUniversalTime());
 
                 actual = (DateTimeOffsetType)DefaultSerializer.Deserialize<DateTimeOffsetType>(input);
 
-                Assert.AreEqual(actual.DateTimeOffset, expected.DateTimeOffset);
+                Assert.AreEqual(actual.DateTimeOffset.ToUniversalTime(), expected.DateTimeOffset.ToUniversalTime());
             }
         }
 
         [Tag("notWP75")]
+        [Tag("notXamarin")]
         [TestMethod]
         public void DateTimeOffsetDeserializationNegative()
         {
@@ -2119,9 +2204,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 new Tuple<string, string>("{\"DateTimeOffset\":\"\t\"}", "String was not recognized as a valid DateTime."),
             };
 
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(DateTimeOffsetType));
-
             foreach (var testCase in testCases)
             {
                 var input = testCase.Item1;
@@ -2131,6 +2213,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(DateTimeOffsetType));
+
                     DefaultSerializer.Deserialize(input, actual);
                 }
                 catch (Exception e)
@@ -2164,7 +2249,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -2194,7 +2279,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 NullableType actual = new NullableType();
@@ -2216,7 +2301,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                     }
                 }
 
-                if (input != "{}")
+                if (testCase.Item2 != "{}")
                 {
                     actual = new NullableType();
                     actual.Nullable = 34.6;
@@ -2239,7 +2324,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                     }
                 }
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<NullableType>(json).FirstOrDefault();
 
                 if (actual.Nullable.HasValue)
@@ -2279,6 +2364,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
         }
 
         [Tag("notWP75")]
+        [Tag("notXamarin")]
         [TestMethod]
         public void NullableDeserializationNegative()
         {
@@ -2286,9 +2372,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 "{\"Nullable\":1.7976931348623157E+309}",
                 "{\"Nullable\":-1.7976931348623157E+309}",
             };
-
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(NullableType));
 
             foreach (var testCase in testCases)
             {
@@ -2298,6 +2381,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Exception actualError = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(NullableType));
+
                     DefaultSerializer.Deserialize(input, actual);
                 }
                 catch (Exception e)
@@ -2305,7 +2391,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                     actualError = e;
                 }
 
-                Assert.AreEqual(actualError.Message, "Value was either too large or too small for a Double.");
+                Assert.Contains(actualError.Message, "is not a valid number. Path 'Nullable'");
             }
         }
 
@@ -2326,8 +2412,8 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
-                
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
+
 
                 Assert.AreEqual(actual, expected);
             }
@@ -2347,7 +2433,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 PocoType actual = new PocoType();
@@ -2360,7 +2446,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual, expected);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<PocoType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual, expected);
@@ -2412,7 +2498,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -2432,7 +2518,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 DataContractType actual = new DataContractType();
@@ -2445,7 +2531,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual, expected);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<DataContractType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual, expected);
@@ -2497,7 +2583,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -2517,7 +2603,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 JsonPropertyType actual = new JsonPropertyType();
@@ -2530,7 +2616,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual, expected);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<JsonPropertyType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual, expected);
@@ -2582,7 +2668,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -2602,7 +2688,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 PocoDerivedPocoType actual = new PocoDerivedPocoType();
@@ -2615,7 +2701,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual, expected);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<PocoDerivedPocoType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual, expected);
@@ -2667,7 +2753,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -2687,7 +2773,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 PocoDerivedDataContractType actual = new PocoDerivedDataContractType();
@@ -2700,7 +2786,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual, expected);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<PocoDerivedDataContractType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual, expected);
@@ -2752,7 +2838,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -2772,7 +2858,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 PocoDerivedJsonPropertyType actual = new PocoDerivedJsonPropertyType();
@@ -2785,7 +2871,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual, expected);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<PocoDerivedJsonPropertyType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual, expected);
@@ -2837,7 +2923,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -2857,7 +2943,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 DataContractDerivedDataContractType actual = new DataContractDerivedDataContractType();
@@ -2870,7 +2956,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual, expected);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<DataContractDerivedDataContractType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual, expected);
@@ -2922,7 +3008,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -2942,7 +3028,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 DataContractDerivedJsonPropertyType actual = new DataContractDerivedJsonPropertyType();
@@ -2955,7 +3041,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual, expected);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<DataContractDerivedJsonPropertyType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual, expected);
@@ -3007,7 +3093,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -3027,7 +3113,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 JsonPropertyDerivedJsonPropertyType actual = new JsonPropertyDerivedJsonPropertyType();
@@ -3040,7 +3126,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual, expected);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<JsonPropertyDerivedJsonPropertyType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual, expected);
@@ -3057,7 +3143,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
         {
             List<Tuple<JsonPropertyDerivedJsonPropertyType, string>> testCases = new List<Tuple<JsonPropertyDerivedJsonPropertyType, string>>() {
                 new Tuple<JsonPropertyDerivedJsonPropertyType, string>(new JsonPropertyDerivedJsonPropertyType(), "{\"DerivedPublicPropertyJsonProperty\":null,\"DerivedInternalPropertyJsonProperty\":null,\"DerivedPrivatePropertyJsonProperty\":null,\"DerivedPublicProperty\":null,\"DerivedInternalProperty\":null,\"DerivedPrivateProperty\":null,\"PublicPropertyJsonProperty\":null,\"InternalPropertyJsonProperty\":null,\"PrivatePropertyJsonProperty\":null,\"PublicProperty\":null,\"InternalProperty\":null,\"PrivateProperty\":null,\"DerivedPublicFieldJsonProperty\":null,\"DerivedInternalFieldJsonProperty\":null,\"DerivedPrivateFieldJsonProperty\":null,\"DerivedPublicField\":null,\"DerivedInternalField\":null,\"DerivedPrivateField\":null,\"PublicFieldJsonProperty\":null,\"InternalFieldJsonProperty\":null,\"PrivateFieldJsonProperty\":null,\"PublicField\":null,\"InternalField\":null,\"PrivateField\":null,\"DerivedPublicPropertySansAttribute\":null,\"PublicPropertySansAttribute\":null,\"DerivedPublicFieldSansAttribute\":null,\"PublicFieldSansAttribute\":null}"),
-                new Tuple<JsonPropertyDerivedJsonPropertyType, string>(new JsonPropertyDerivedJsonPropertyType("_XYZ", onlySetSerializableMembers: true), "{\"DerivedPublicPropertyJsonProperty\":\"DerivedPublicPropertyNamedJsonProperty_XYZ\",\"DerivedInternalPropertyJsonProperty\":\"DerivedInternalPropertyNamedJsonProperty_XYZ\",\"DerivedPrivatePropertyJsonProperty\":\"DerivedPrivatePropertyNamedJsonProperty_XYZ\",\"DerivedPublicProperty\":\"DerivedPublicProperty_XYZ\",\"DerivedInternalProperty\":\"DerivedInternalProperty_XYZ\",\"DerivedPrivateProperty\":\"DerivedPrivateProperty_XYZ\",\"PublicPropertyJsonProperty\":\"PublicPropertyNamedJsonProperty_XYZ\",\"InternalPropertyJsonProperty\":\"InternalPropertyNamedJsonProperty_XYZ\",\"PrivatePropertyJsonProperty\":null,\"PublicProperty\":\"PublicProperty_XYZ\",\"InternalProperty\":\"InternalProperty_XYZ\",\"PrivateProperty\":null,\"DerivedPublicFieldJsonProperty\":\"DerivedPublicFieldNamedJsonProperty_XYZ\",\"DerivedInternalFieldJsonProperty\":\"DerivedInternalFieldNamedJsonProperty_XYZ\",\"DerivedPrivateFieldJsonProperty\":\"DerivedPrivateFieldNamedJsonProperty_XYZ\",\"DerivedPublicField\":\"DerivedPublicField_XYZ\",\"DerivedInternalField\":\"DerivedInternalField_XYZ\",\"DerivedPrivateField\":\"DerivedPrivateField_XYZ\",\"PublicFieldJsonProperty\":\"PublicFieldNamedJsonProperty_XYZ\",\"InternalFieldJsonProperty\":\"InternalFieldNamedJsonProperty_XYZ\",\"PrivateFieldJsonProperty\":null,\"PublicField\":\"PublicField_XYZ\",\"InternalField\":\"InternalField_XYZ\",\"PrivateField\":null,\"DerivedPublicPropertySansAttribute\":\"DerivedPublicPropertySansAttribute_XYZ\",\"PublicPropertySansAttribute\":\"PublicPropertySansAttribute_XYZ\",\"DerivedPublicFieldSansAttribute\":\"DerivedPublicFieldSansAttribute_XYZ\",\"PublicFieldSansAttribute\":\"PublicFieldSansAttribute_XYZ\"}"),
+                new Tuple<JsonPropertyDerivedJsonPropertyType, string>(new JsonPropertyDerivedJsonPropertyType("_XYZ", onlySetSerializableMembers: true), "{\"DerivedPublicFieldJsonProperty\":\"DerivedPublicFieldNamedJsonProperty_XYZ\",\"DerivedInternalFieldJsonProperty\":\"DerivedInternalFieldNamedJsonProperty_XYZ\",\"DerivedPrivateFieldJsonProperty\":\"DerivedPrivateFieldNamedJsonProperty_XYZ\",\"DerivedPublicField\":\"DerivedPublicField_XYZ\",\"DerivedInternalField\":\"DerivedInternalField_XYZ\",\"DerivedPrivateField\":\"DerivedPrivateField_XYZ\",\"DerivedPublicFieldSansAttribute\":\"DerivedPublicFieldSansAttribute_XYZ\",\"PublicFieldJsonProperty\":\"PublicFieldNamedJsonProperty_XYZ\",\"InternalFieldJsonProperty\":\"InternalFieldNamedJsonProperty_XYZ\",\"PublicField\":\"PublicField_XYZ\",\"InternalField\":\"InternalField_XYZ\",\"PublicFieldSansAttribute\":\"PublicFieldSansAttribute_XYZ\",\"DerivedPublicPropertyJsonProperty\":\"DerivedPublicPropertyNamedJsonProperty_XYZ\",\"DerivedInternalPropertyJsonProperty\":\"DerivedInternalPropertyNamedJsonProperty_XYZ\",\"DerivedPrivatePropertyJsonProperty\":\"DerivedPrivatePropertyNamedJsonProperty_XYZ\",\"DerivedPublicProperty\":\"DerivedPublicProperty_XYZ\",\"DerivedInternalProperty\":\"DerivedInternalProperty_XYZ\",\"DerivedPrivateProperty\":\"DerivedPrivateProperty_XYZ\",\"DerivedPublicPropertySansAttribute\":\"DerivedPublicPropertySansAttribute_XYZ\",\"PublicPropertyJsonProperty\":\"PublicPropertyNamedJsonProperty_XYZ\",\"InternalPropertyJsonProperty\":\"InternalPropertyNamedJsonProperty_XYZ\",\"PublicProperty\":\"PublicProperty_XYZ\",\"InternalProperty\":\"InternalProperty_XYZ\",\"PublicPropertySansAttribute\":\"PublicPropertySansAttribute_XYZ\",\"PrivateFieldJsonProperty\":\"PrivateFieldNamedJsonProperty_XYZ\",\"PrivateField\":\"PrivateField_XYZ\",\"PrivatePropertyJsonProperty\":\"PrivatePropertyNamedJsonProperty_XYZ\",\"PrivateProperty\":\"PrivateProperty_XYZ\"}"),
             };
 
             // Need to ensure that the type is registered as a table to force the id property check
@@ -3079,9 +3165,10 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
         [Tag("notWP75")]
         public void JsonPropertyDerivedDataContractSerialization()
         {
+            // Verifies that given a object it serializes into the expected string representation
             List<Tuple<JsonPropertyDerivedDataContractType, string>> testCases = new List<Tuple<JsonPropertyDerivedDataContractType, string>>() {                                                                                                      
                 new Tuple<JsonPropertyDerivedDataContractType, string>(new JsonPropertyDerivedDataContractType(), "{\"DerivedPublicFieldDataMember\":null,\"DerivedInternalFieldDataMember\":null,\"DerivedPrivateFieldDataMember\":null,\"DerivedPublicField\":null,\"DerivedInternalField\":null,\"DerivedPrivateField\":null,\"PublicFieldJsonProperty\":null,\"InternalFieldJsonProperty\":null,\"PublicField\":null,\"InternalField\":null,\"DerivedPublicPropertyDataMember\":null,\"DerivedInternalPropertyDataMember\":null,\"DerivedPrivatePropertyDataMember\":null,\"DerivedPublicProperty\":null,\"DerivedInternalProperty\":null,\"DerivedPrivateProperty\":null,\"PublicPropertyJsonProperty\":null,\"InternalPropertyJsonProperty\":null,\"PublicProperty\":null,\"InternalProperty\":null,\"PrivateFieldJsonProperty\":null,\"PrivateField\":null,\"PrivatePropertyJsonProperty\":null,\"PrivateProperty\":null}"), 
-                new Tuple<JsonPropertyDerivedDataContractType, string>(new JsonPropertyDerivedDataContractType("_XYZ"), "{\"DerivedPublicFieldDataMember\":\"DerivedPublicFieldNamedDataMember_XYZ\",\"DerivedInternalFieldDataMember\":\"DerivedInternalFieldNamedDataMember_XYZ\",\"DerivedPrivateFieldDataMember\":\"DerivedPrivateFieldNamedDataMember_XYZ\",\"DerivedPublicField\":\"DerivedPublicField_XYZ\",\"DerivedInternalField\":\"DerivedInternalField_XYZ\",\"DerivedPrivateField\":\"DerivedPrivateField_XYZ\",\"PublicFieldJsonProperty\":\"PublicFieldNamedJsonProperty_XYZ\",\"InternalFieldJsonProperty\":\"InternalFieldNamedJsonProperty_XYZ\",\"PublicField\":\"PublicField_XYZ\",\"InternalField\":\"InternalField_XYZ\",\"DerivedPublicPropertyDataMember\":\"DerivedPublicPropertyNamedDataMember_XYZ\",\"DerivedInternalPropertyDataMember\":\"DerivedInternalPropertyNamedDataMember_XYZ\",\"DerivedPrivatePropertyDataMember\":\"DerivedPrivatePropertyNamedDataMember_XYZ\",\"DerivedPublicProperty\":\"DerivedPublicProperty_XYZ\",\"DerivedInternalProperty\":\"DerivedInternalProperty_XYZ\",\"DerivedPrivateProperty\":\"DerivedPrivateProperty_XYZ\",\"PublicPropertyJsonProperty\":\"PublicPropertyNamedJsonProperty_XYZ\",\"InternalPropertyJsonProperty\":\"InternalPropertyNamedJsonProperty_XYZ\",\"PublicProperty\":\"PublicProperty_XYZ\",\"InternalProperty\":\"InternalProperty_XYZ\",\"PrivateFieldJsonProperty\":\"PrivateFieldNamedJsonProperty_XYZ\",\"PrivateField\":\"PrivateField_XYZ\",\"PrivatePropertyJsonProperty\":\"PrivatePropertyNamedJsonProperty_XYZ\",\"PrivateProperty\":\"PrivateProperty_XYZ\"}") 
+                new Tuple<JsonPropertyDerivedDataContractType, string>(new JsonPropertyDerivedDataContractType("_XYZ"), "{\"DerivedPublicFieldDataMember\":\"DerivedPublicFieldNamedDataMember_XYZ\",\"DerivedInternalFieldDataMember\":\"DerivedInternalFieldNamedDataMember_XYZ\",\"DerivedPrivateFieldDataMember\":\"DerivedPrivateFieldNamedDataMember_XYZ\",\"DerivedPublicField\":\"DerivedPublicField_XYZ\",\"DerivedInternalField\":\"DerivedInternalField_XYZ\",\"DerivedPrivateField\":\"DerivedPrivateField_XYZ\",\"PublicFieldJsonProperty\":null,\"InternalFieldJsonProperty\":null,\"PublicField\":null,\"InternalField\":null,\"DerivedPublicPropertyDataMember\":\"DerivedPublicPropertyNamedDataMember_XYZ\",\"DerivedInternalPropertyDataMember\":\"DerivedInternalPropertyNamedDataMember_XYZ\",\"DerivedPrivatePropertyDataMember\":\"DerivedPrivatePropertyNamedDataMember_XYZ\",\"DerivedPublicProperty\":\"DerivedPublicProperty_XYZ\",\"DerivedInternalProperty\":\"DerivedInternalProperty_XYZ\",\"DerivedPrivateProperty\":\"DerivedPrivateProperty_XYZ\",\"PublicPropertyJsonProperty\":null,\"InternalPropertyJsonProperty\":null,\"PublicProperty\":null,\"InternalProperty\":null,\"PrivateFieldJsonProperty\":null,\"PrivateField\":null,\"PrivatePropertyJsonProperty\":null,\"PrivateProperty\":null}")            
             };
 
             // Need to ensure that the type is registered as a table to force the id property check
@@ -3092,8 +3179,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
-
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
                 Assert.AreEqual(actual, expected);
             }
         }
@@ -3102,9 +3188,12 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
         [Tag("notWP75")]
         public void JsonPropertyDerivedDataContractDeserialization()
         {
+            // Verifies that given a serialized json object, it can be deserialized into the expected object
+            // It also checks that deserializing an object into a different one will correctly override the
+            // properties of the original
             List<Tuple<JsonPropertyDerivedDataContractType, string>> testCases = new List<Tuple<JsonPropertyDerivedDataContractType, string>>() {
                 new Tuple<JsonPropertyDerivedDataContractType, string>(new JsonPropertyDerivedDataContractType(), "{\"DerivedPublicFieldDataMember\":null,\"DerivedInternalFieldDataMember\":null,\"DerivedPrivateFieldDataMember\":null,\"DerivedPublicField\":null,\"DerivedInternalField\":null,\"DerivedPrivateField\":null,\"PublicFieldJsonProperty\":null,\"InternalFieldJsonProperty\":null,\"PublicField\":null,\"InternalField\":null,\"PrivateFieldJsonProperty\":null,\"PrivateField\":null,\"DerivedPublicPropertyDataMember\":null,\"DerivedInternalPropertyDataMember\":null,\"DerivedPrivatePropertyDataMember\":null,\"DerivedPublicProperty\":null,\"DerivedInternalProperty\":null,\"DerivedPrivateProperty\":null,\"PublicPropertyJsonProperty\":null,\"InternalPropertyJsonProperty\":null,\"PublicProperty\":null,\"InternalProperty\":null,\"PrivatePropertyJsonProperty\":null,\"PrivateProperty\":null}"),
-                new Tuple<JsonPropertyDerivedDataContractType, string>(new JsonPropertyDerivedDataContractType("_XYZ", onlySetSerializableMembers: true), "{\"DerivedPublicFieldDataMember\":\"DerivedPublicFieldNamedDataMember_XYZ\",\"DerivedInternalFieldDataMember\":\"DerivedInternalFieldNamedDataMember_XYZ\",\"DerivedPrivateFieldDataMember\":\"DerivedPrivateFieldNamedDataMember_XYZ\",\"DerivedPublicField\":\"DerivedPublicField_XYZ\",\"DerivedInternalField\":\"DerivedInternalField_XYZ\",\"DerivedPrivateField\":\"DerivedPrivateField_XYZ\",\"PublicFieldJsonProperty\":\"PublicFieldNamedJsonProperty_XYZ\",\"InternalFieldJsonProperty\":\"InternalFieldNamedJsonProperty_XYZ\",\"PublicField\":\"PublicField_XYZ\",\"InternalField\":\"InternalField_XYZ\",\"PrivateFieldJsonProperty\":\"PrivateFieldNamedJsonProperty_XYZ\",\"PrivateField\":\"PrivateField_XYZ\",\"DerivedPublicPropertyDataMember\":\"DerivedPublicPropertyNamedDataMember_XYZ\",\"DerivedInternalPropertyDataMember\":\"DerivedInternalPropertyNamedDataMember_XYZ\",\"DerivedPrivatePropertyDataMember\":\"DerivedPrivatePropertyNamedDataMember_XYZ\",\"DerivedPublicProperty\":\"DerivedPublicProperty_XYZ\",\"DerivedInternalProperty\":\"DerivedInternalProperty_XYZ\",\"DerivedPrivateProperty\":\"DerivedPrivateProperty_XYZ\",\"PublicPropertyJsonProperty\":\"PublicPropertyNamedJsonProperty_XYZ\",\"InternalPropertyJsonProperty\":\"InternalPropertyNamedJsonProperty_XYZ\",\"PublicProperty\":\"PublicProperty_XYZ\",\"InternalProperty\":\"InternalProperty_XYZ\",\"PrivatePropertyJsonProperty\":\"PrivatePropertyNamedJsonProperty_XYZ\",\"PrivateProperty\":\"PrivateProperty_XYZ\"}"),
+                new Tuple<JsonPropertyDerivedDataContractType, string>(new JsonPropertyDerivedDataContractType("_XYZ", onlySetSerializableMembers: true), "{\"DerivedPublicFieldDataMember\":\"DerivedPublicFieldNamedDataMember_XYZ\",\"DerivedInternalFieldDataMember\":\"DerivedInternalFieldNamedDataMember_XYZ\",\"DerivedPrivateFieldDataMember\":\"DerivedPrivateFieldNamedDataMember_XYZ\",\"DerivedPublicField\":\"DerivedPublicField_XYZ\",\"DerivedInternalField\":\"DerivedInternalField_XYZ\",\"DerivedPrivateField\":\"DerivedPrivateField_XYZ\",\"PublicFieldJsonProperty\":null,\"InternalFieldJsonProperty\":null,\"PublicField\":null,\"InternalField\":null,\"PrivateFieldJsonProperty\":null,\"PrivateField\":null,\"DerivedPublicPropertyDataMember\":\"DerivedPublicPropertyNamedDataMember_XYZ\",\"DerivedInternalPropertyDataMember\":\"DerivedInternalPropertyNamedDataMember_XYZ\",\"DerivedPrivatePropertyDataMember\":\"DerivedPrivatePropertyNamedDataMember_XYZ\",\"DerivedPublicProperty\":\"DerivedPublicProperty_XYZ\",\"DerivedInternalProperty\":\"DerivedInternalProperty_XYZ\",\"DerivedPrivateProperty\":\"DerivedPrivateProperty_XYZ\",\"PublicPropertyJsonProperty\":null,\"InternalPropertyJsonProperty\":null,\"PublicProperty\":null,\"InternalProperty\":null,\"PrivatePropertyJsonProperty\":null,\"PrivateProperty\":null}"),
             };
 
             // Need to ensure that the type is registered as a table to force the id property check
@@ -3112,7 +3201,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase.Item2;
+                var input = JToken.Parse(testCase.Item2);
                 var expected = testCase.Item1;
 
                 JsonPropertyDerivedDataContractType actual = new JsonPropertyDerivedDataContractType();
@@ -3125,7 +3214,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual, expected);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase.Item2 + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<JsonPropertyDerivedDataContractType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual, expected);
@@ -3140,9 +3229,10 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
         [Tag("notWP75")]
         public void JsonPropertyDerivedDataContractPopulation()
         {
+            // Verifies that given a serialized json object, it can be deserialized into the expected object
             List<Tuple<JsonPropertyDerivedDataContractType, string>> testCases = new List<Tuple<JsonPropertyDerivedDataContractType, string>>() {
                 new Tuple<JsonPropertyDerivedDataContractType, string>(new JsonPropertyDerivedDataContractType(), "{\"DerivedPublicFieldDataMember\":null,\"DerivedInternalFieldDataMember\":null,\"DerivedPrivateFieldDataMember\":null,\"DerivedPublicField\":null,\"DerivedInternalField\":null,\"DerivedPrivateField\":null,\"PublicFieldJsonProperty\":null,\"InternalFieldJsonProperty\":null,\"PublicField\":null,\"InternalField\":null,\"PrivateFieldJsonProperty\":null,\"PrivateField\":null,\"DerivedPublicPropertyDataMember\":null,\"DerivedInternalPropertyDataMember\":null,\"DerivedPrivatePropertyDataMember\":null,\"DerivedPublicProperty\":null,\"DerivedInternalProperty\":null,\"DerivedPrivateProperty\":null,\"PublicPropertyJsonProperty\":null,\"InternalPropertyJsonProperty\":null,\"PublicProperty\":null,\"InternalProperty\":null,\"PrivatePropertyJsonProperty\":null,\"PrivateProperty\":null}"),
-                new Tuple<JsonPropertyDerivedDataContractType, string>(new JsonPropertyDerivedDataContractType("_XYZ", onlySetSerializableMembers: true), "{\"DerivedPublicFieldDataMember\":\"DerivedPublicFieldNamedDataMember_XYZ\",\"DerivedInternalFieldDataMember\":\"DerivedInternalFieldNamedDataMember_XYZ\",\"DerivedPrivateFieldDataMember\":\"DerivedPrivateFieldNamedDataMember_XYZ\",\"DerivedPublicField\":\"DerivedPublicField_XYZ\",\"DerivedInternalField\":\"DerivedInternalField_XYZ\",\"DerivedPrivateField\":\"DerivedPrivateField_XYZ\",\"PublicFieldJsonProperty\":\"PublicFieldNamedJsonProperty_XYZ\",\"InternalFieldJsonProperty\":\"InternalFieldNamedJsonProperty_XYZ\",\"PublicField\":\"PublicField_XYZ\",\"InternalField\":\"InternalField_XYZ\",\"PrivateFieldJsonProperty\":\"PrivateFieldNamedJsonProperty_XYZ\",\"PrivateField\":\"PrivateField_XYZ\",\"DerivedPublicPropertyDataMember\":\"DerivedPublicPropertyNamedDataMember_XYZ\",\"DerivedInternalPropertyDataMember\":\"DerivedInternalPropertyNamedDataMember_XYZ\",\"DerivedPrivatePropertyDataMember\":\"DerivedPrivatePropertyNamedDataMember_XYZ\",\"DerivedPublicProperty\":\"DerivedPublicProperty_XYZ\",\"DerivedInternalProperty\":\"DerivedInternalProperty_XYZ\",\"DerivedPrivateProperty\":\"DerivedPrivateProperty_XYZ\",\"PublicPropertyJsonProperty\":\"PublicPropertyNamedJsonProperty_XYZ\",\"InternalPropertyJsonProperty\":\"InternalPropertyNamedJsonProperty_XYZ\",\"PublicProperty\":\"PublicProperty_XYZ\",\"InternalProperty\":\"InternalProperty_XYZ\",\"PrivatePropertyJsonProperty\":\"PrivatePropertyNamedJsonProperty_XYZ\",\"PrivateProperty\":\"PrivateProperty_XYZ\"}"),
+                new Tuple<JsonPropertyDerivedDataContractType, string>(new JsonPropertyDerivedDataContractType("_XYZ", onlySetSerializableMembers: true), "{\"DerivedPublicFieldDataMember\":\"DerivedPublicFieldNamedDataMember_XYZ\",\"DerivedInternalFieldDataMember\":\"DerivedInternalFieldNamedDataMember_XYZ\",\"DerivedPrivateFieldDataMember\":\"DerivedPrivateFieldNamedDataMember_XYZ\",\"DerivedPublicField\":\"DerivedPublicField_XYZ\",\"DerivedInternalField\":\"DerivedInternalField_XYZ\",\"DerivedPrivateField\":\"DerivedPrivateField_XYZ\",\"PublicFieldJsonProperty\":null,\"InternalFieldJsonProperty\":null,\"PublicField\":null,\"InternalField\":null,\"DerivedPublicPropertyDataMember\":\"DerivedPublicPropertyNamedDataMember_XYZ\",\"DerivedInternalPropertyDataMember\":\"DerivedInternalPropertyNamedDataMember_XYZ\",\"DerivedPrivatePropertyDataMember\":\"DerivedPrivatePropertyNamedDataMember_XYZ\",\"DerivedPublicProperty\":\"DerivedPublicProperty_XYZ\",\"DerivedInternalProperty\":\"DerivedInternalProperty_XYZ\",\"DerivedPrivateProperty\":\"DerivedPrivateProperty_XYZ\",\"PublicPropertyJsonProperty\":null,\"InternalPropertyJsonProperty\":null,\"PublicProperty\":null,\"InternalProperty\":null,\"PrivateFieldJsonProperty\":null,\"PrivateField\":null,\"PrivatePropertyJsonProperty\":null,\"PrivateProperty\":null}")
             };
 
             // Need to ensure that the type is registered as a table to force the id property check
@@ -3156,6 +3246,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 JsonPropertyDerivedDataContractType actual = new JsonPropertyDerivedDataContractType("_ABC", onlySetSerializableMembers: true);
                 DefaultSerializer.Deserialize(input, actual);
 
+                string test = DefaultSerializer.Serialize(expected).ToString(Formatting.None);
                 Assert.AreEqual(actual, expected);
             }
         }
@@ -3176,7 +3267,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -3235,11 +3326,11 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
         {
             Exception actual = null;
 
-            // Need to ensure that the type is registered as a table to force the id property check
-            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(DataContractDerivedPocoType));
-
             try
             {
+                // Need to ensure that the type is registered as a table to force the id property check
+                DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(DataContractDerivedPocoType));
+
                 DefaultSerializer.Serialize(new DataContractDerivedPocoType());
             }
             catch (Exception e)
@@ -3280,7 +3371,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             {
                 actual = e;
             }
- 
+
             Assert.AreEqual(actual.Message, "A member with the name 'PublicProperty' already exists on 'Microsoft.WindowsAzure.MobileServices.Test.DuplicateKeyType'. Use the JsonPropertyAttribute to specify another name.");
         }
 
@@ -3292,7 +3383,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(instance.GetType());
             instance.OtherThanPublicProperty = "OtherThanPublicProperty";
             instance.PublicProperty = "PublicProperty";
-            string actual = DefaultSerializer.Serialize(instance);
+            string actual = DefaultSerializer.Serialize(instance).ToString(Formatting.None);
 
             Assert.AreEqual(actual, expected);
         }
@@ -3313,12 +3404,12 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
         }
-                       
+
         [TestMethod]
         public void IdTypeSerializationNegative()
         {
@@ -3332,14 +3423,15 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                // Need to ensure that the type is registered as a table to force the id property check
-                DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(testCase.Item1.GetType());
 
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
                 Exception actual = null;
                 try
                 {
+                    // Need to ensure that the type is registered as a table to force the id property check
+                    DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(input.GetType());
+
                     DefaultSerializer.Serialize(input);
                 }
                 catch (Exception e)
@@ -3366,7 +3458,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -3413,7 +3505,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -3461,7 +3553,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -3487,7 +3579,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 var input = testCase.Item1;
                 var expected = testCase.Item2;
 
-                string actual = DefaultSerializer.Serialize(input);
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
 
                 Assert.AreEqual(actual, expected);
             }
@@ -3506,7 +3598,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             foreach (var testCase in testCases)
             {
-                var input = testCase;
+                var input = JToken.Parse(testCase);
 
                 ConverterType actual = new ConverterType();
                 DefaultSerializer.Deserialize(input, actual);
@@ -3519,7 +3611,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.Number, 10);
 
-                JArray json = JToken.Parse("[" + input + "]") as JArray;
+                JArray json = JToken.Parse("[" + testCase + "]") as JArray;
                 actual = DefaultSerializer.Deserialize<ConverterType>(json).FirstOrDefault();
 
                 Assert.AreEqual(actual.Number, 0);
@@ -3528,6 +3620,236 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 Assert.AreEqual(actual.Number, 0);
             }
-        }              
+        }
+
+        [TestMethod]
+        public void CreatedAtTypeSerialization()
+        {
+            List<Tuple<CreatedAtType, string>> testCases = new List<Tuple<CreatedAtType, string>>
+            {
+                new Tuple<CreatedAtType, string>(
+                    new CreatedAtType { CreatedAt = new DateTime(2012, 1, 5, 12, 0, 0, DateTimeKind.Utc) },
+                    "{\"__createdAt\":\"2012-01-05T12:00:00.000Z\"}"),
+                new Tuple<CreatedAtType, string>(
+                    new CreatedAtType { CreatedAt = default(DateTime) },
+                    "{\"__createdAt\":" + MinDateTimeSerializedToJson + "}"),
+            };
+
+            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(CreatedAtType));
+
+            foreach (var testCase in testCases)
+            {
+                var input = testCase.Item1;
+                var expected = testCase.Item2;
+
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
+
+                Assert.AreEqual(actual, expected);
+            }
+        }
+
+        [TestMethod]
+        public void CreatedAtTypeDeserialization()
+        {
+            List<Tuple<CreatedAtType, string>> testCases = new List<Tuple<CreatedAtType, string>>() {
+                new Tuple<CreatedAtType, string>(new CreatedAtType { CreatedAt = default(DateTime) }, "{\"__createdAt\":" + MinDateTimeSerializedToJson + "}"),
+                new Tuple<CreatedAtType, string>(new CreatedAtType { CreatedAt = new DateTime(2012, 1, 5, 12, 0, 0, DateTimeKind.Utc) }, "{\"__createdAt\":\"2012-01-05T12:00:00.000Z\"}"),
+            };
+
+            // Need to ensure that the type is registered as a table to force the id property check
+            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(CreatedAtType));
+
+            foreach (var testCase in testCases)
+            {
+                var input = testCase.Item2;
+                var expected = testCase.Item1;
+
+                CreatedAtType actual = new CreatedAtType();
+                DefaultSerializer.Deserialize(input, actual);
+
+                Assert.AreEqual(actual.CreatedAt.ToUniversalTime(), expected.CreatedAt.ToUniversalTime());
+            }
+        }
+
+        [TestMethod]
+        public void UpdatedAtTypeSerialization()
+        {
+            List<Tuple<UpdatedAtType, string>> testCases = new List<Tuple<UpdatedAtType, string>>
+            {
+                new Tuple<UpdatedAtType, string>(
+                    new UpdatedAtType { UpdatedAt = new DateTime(2012, 1, 5, 12, 0, 0, DateTimeKind.Utc) },
+                    "{\"__updatedAt\":\"2012-01-05T12:00:00.000Z\"}"),
+                new Tuple<UpdatedAtType, string>(
+                    new UpdatedAtType { UpdatedAt = default(DateTime) },
+                    "{\"__updatedAt\":" + MinDateTimeSerializedToJson + "}"),
+            };
+
+            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(UpdatedAtType));
+
+            foreach (var testCase in testCases)
+            {
+                var input = testCase.Item1;
+                var expected = testCase.Item2;
+
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
+
+                Assert.AreEqual(actual, expected);
+            }
+        }
+
+        [TestMethod]
+        public void UpdatedAtTypeDeserialization()
+        {
+            List<Tuple<UpdatedAtType, string>> testCases = new List<Tuple<UpdatedAtType, string>>() {
+                new Tuple<UpdatedAtType, string>(new UpdatedAtType { UpdatedAt = default(DateTime) }, "{\"__updatedAt\":" + MinDateTimeSerializedToJson + "}"),
+                new Tuple<UpdatedAtType, string>(new UpdatedAtType { UpdatedAt = new DateTime(2012, 1, 5, 12, 0, 0, DateTimeKind.Utc) }, "{\"__updatedAt\":\"2012-01-05T12:00:00.000Z\"}"),
+            };
+
+            // Need to ensure that the type is registered as a table to force the id property check
+            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(UpdatedAtType));
+
+            foreach (var testCase in testCases)
+            {
+                var input = testCase.Item2;
+                var expected = testCase.Item1;
+
+                UpdatedAtType actual = new UpdatedAtType();
+                DefaultSerializer.Deserialize(input, actual);
+
+                Assert.AreEqual(actual.UpdatedAt.ToUniversalTime(), expected.UpdatedAt.ToUniversalTime());
+            }
+        }
+
+        [TestMethod]
+        public void Deserialize_DoesNotTransformException_WhenIdTypeDoesNotMismatch()
+        {
+            var ex = Throws<JsonSerializationException>(() =>
+            {
+                var token = new JValue(true);
+                DefaultSerializer.Deserialize<LongIdType>(token);
+            });
+
+            Assert.AreEqual(ex.Message, "Error converting value True to type 'Microsoft.WindowsAzure.MobileServices.Test.LongIdType'. Path ''.");
+        }
+
+        [TestMethod]
+        public void Deserialize_TransoformsException_WhenIdTypeMismatches()
+        {
+            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(LongIdType));
+
+            var ex = Throws<JsonSerializationException>(() =>
+            {
+                var token = new JObject() { {"id", "asdf"} };
+                DefaultSerializer.Deserialize<LongIdType>(token);
+            });
+
+            string expectedMessage = @"Error converting value ""asdf"" to type 'System.Int64'. Path 'id'." + Environment.NewLine + @"You might be affected by Mobile Services latest changes to support string Ids. For more details: http://go.microsoft.com/fwlink/?LinkId=330396";
+
+            Assert.AreEqual(ex.Message, expectedMessage);
+        }
+
+        [TestMethod]
+        public void VersionTypeSerialization()
+        {
+            List<Tuple<VersionType, string>> testCases = new List<Tuple<VersionType, string>>
+            {
+                new Tuple<VersionType, string>(new VersionType { Version = "0x0004F" }, "{\"__version\":\"0x0004F\"}"),
+                new Tuple<VersionType, string>(new VersionType { Version = null }, "{\"__version\":null}"),
+            };
+
+            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(VersionType));
+
+            foreach (var testCase in testCases)
+            {
+                var input = testCase.Item1;
+                var expected = testCase.Item2;
+
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
+
+                Assert.AreEqual(actual, expected);
+            }
+        }
+
+        [TestMethod]
+        public void VersionTypeDeserialization()
+        {
+            List<Tuple<VersionType, string>> testCases = new List<Tuple<VersionType, string>>() {
+                new Tuple<VersionType, string>(new VersionType { Version = "0x0004F" }, "{\"__version\":\"0x0004F\"}"),
+                new Tuple<VersionType, string>(new VersionType { Version = null }, "{\"__version\":null}"),
+            };
+
+            // Need to ensure that the type is registered as a table to force the id property check
+            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(VersionType));
+
+            foreach (var testCase in testCases)
+            {
+                var input = testCase.Item2;
+                var expected = testCase.Item1;
+
+                VersionType actual = new VersionType();
+                DefaultSerializer.Deserialize(input, actual);
+
+                Assert.AreEqual(actual.Version, expected.Version);
+            }
+        }
+
+        [TestMethod]
+        public void AllSystemPropertiesTypeSerialization()
+        {
+            List<Tuple<AllSystemPropertiesType, string>> testCases = new List<Tuple<AllSystemPropertiesType, string>>
+            {
+                new Tuple<AllSystemPropertiesType, string>(new AllSystemPropertiesType { UpdatedAt = new DateTime(2012, 1, 5, 12, 0, 0, DateTimeKind.Utc),
+                                                                                         CreatedAt = new DateTime(2012, 1, 5, 12, 0, 0, DateTimeKind.Utc), 
+                                                                                         Version = "0x0004F" }, 
+                                                                                         "{\"__createdAt\":\"2012-01-05T12:00:00.000Z\",\"__updatedAt\":\"2012-01-05T12:00:00.000Z\",\"__version\":\"0x0004F\"}"),
+                new Tuple<AllSystemPropertiesType, string>(
+                    new AllSystemPropertiesType { Version = null }, 
+                    "{\"__createdAt\":MIN_DATE,\"__updatedAt\":MIN_DATE,\"__version\":null}".Replace("MIN_DATE", MinDateTimeSerializedToJson)
+                ),
+            };
+
+            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(AllSystemPropertiesType));
+
+            foreach (var testCase in testCases)
+            {
+                var input = testCase.Item1;
+                var expected = testCase.Item2;
+
+                string actual = DefaultSerializer.Serialize(input).ToString(Formatting.None);
+
+                Assert.AreEqual(actual, expected);
+            }
+        }
+
+        [TestMethod]
+        public void AllSystemPropertiesTypeDeserialization()
+        {
+            List<Tuple<AllSystemPropertiesType, string>> testCases = new List<Tuple<AllSystemPropertiesType, string>>
+            {
+                new Tuple<AllSystemPropertiesType, string>(new AllSystemPropertiesType { UpdatedAt = new DateTime(2012, 1, 5, 12, 0, 0, DateTimeKind.Utc),
+                                                                                         CreatedAt = new DateTime(2012, 1, 5, 12, 0, 0, DateTimeKind.Utc), 
+                                                                                         Version = "0x0004F" }, 
+                                                                                         "{\"__createdAt\":\"2012-01-05T12:00:00.000Z\",\"__updatedAt\":\"2012-01-05T12:00:00.000Z\",\"__version\":\"0x0004F\"}"),
+                new Tuple<AllSystemPropertiesType, string>(
+                    new AllSystemPropertiesType { Version = null }, 
+                    "{\"__createdAt\":MIN_DATE,\"__updatedAt\":MIN_DATE,\"__version\":null}".Replace("MIN_DATE", MinDateTimeSerializedToJson)),
+            };
+
+            // Need to ensure that the type is registered as a table to force the id property check
+            DefaultSerializer.SerializerSettings.ContractResolver.ResolveTableName(typeof(AllSystemPropertiesType));
+
+            foreach (var testCase in testCases)
+            {
+                var input = testCase.Item2;
+                var expected = testCase.Item1;
+
+                AllSystemPropertiesType actual = new AllSystemPropertiesType();
+                DefaultSerializer.Deserialize(input, actual);
+
+                Assert.AreEqual(actual.CreatedAt.ToUniversalTime(), expected.CreatedAt.ToUniversalTime());
+                Assert.AreEqual(actual.UpdatedAt.ToUniversalTime(), expected.UpdatedAt.ToUniversalTime());
+                Assert.AreEqual(actual.Version, expected.Version);
+            }
+        }
     }
 }

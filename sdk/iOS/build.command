@@ -1,4 +1,4 @@
-# This bash script cleans and builds the Windows Azure Mobile Services iOS Framework
+# This bash script cleans and builds the Microsoft Azure Mobile Services iOS Framework
 
 # Make sure we are executing in this script's directory
 cd "$( cd "$( dirname "$0" )" && pwd )"
@@ -21,7 +21,7 @@ if [ "$SET_BUILD_VERSION" == "YES" ]; then
 fi
 
 # Build the framework
-xcodebuild -target Framework OBJROOT=./Build SYMROOT=./Build
+xcodebuild OTHER_CFLAGS="-fembed-bitcode -miphoneos-version-min=7.0" -target Framework OBJROOT=./Build SYMROOT=./Build
 
 # Move back to the original WindowsAzureMobileServices.h file
 if [ "$SET_BUILD_VERSION" == "YES" ]; then
@@ -35,13 +35,13 @@ rsync -rlK ../../sdk/iOS/Build/Release-iphoneos/WindowsAzureMobileServices.frame
 cp license.rtf WindowsAzureMobileServices.framework
 
 # Zip the framework
-zip -r WindowsAzureMobileServices.framework.zip WindowsAzureMobileServices.framework 
+zip -r WindowsAzureMobileServices.framework.zip WindowsAzureMobileServices.framework
 
 # Lastly, copy to the build share
 if [ "$COPY_TO_SHARE" == "YES" ]; then
   SHARE_PATH_ARRAY=$(echo $BUILD_SHARE_PATHS | tr ";" "\n")
-  for PATH in $SHARE_PATH_ARRAY
+  for SHARE_PATH in $SHARE_PATH_ARRAY
   do
-    rsync -rlK WindowsAzureMobileServices.framework.zip $PATH
+    rsync -rlK WindowsAzureMobileServices.framework.zip $SHARE_PATH
   done
-fi 
+fi

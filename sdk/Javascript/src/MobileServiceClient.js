@@ -11,6 +11,21 @@ var Validate = require('Validate');
 var Platform = require('Platform');
 var MobileServiceTable = require('MobileServiceTable').MobileServiceTable;
 var MobileServiceLogin = require('MobileServiceLogin').MobileServiceLogin;
+var Push;
+try {
+    Push = require('Push').Push;
+} catch (e) { }
+
+var _zumoFeatures = {
+    JsonApiCall: "AJ",               // Custom API call, where the request body is serialized as JSON
+    GenericApiCall: "AG",            // Custom API call, where the request body is sent 'as-is'
+    AdditionalQueryParameters: "QS", // Table or API call, where the caller passes additional query string parameters
+    OptimisticConcurrency: "OC",     // Table update / delete call, using Optimistic Concurrency (If-Match headers)
+    TableRefreshCall: "RF",          // Refresh table call
+    TableReadRaw: "TR",              // Table reads where the caller uses a raw query string to determine the items to be returned
+    TableReadQuery: "TQ",            // Table reads where the caller uses a function / query OM to determine the items to be returned
+};
+var _zumoFeaturesHeaderName = "X-ZUMO-FEATURES";
 
 function MobileServiceClient(applicationUrl, applicationKey) {
     /// <summary>
@@ -41,6 +56,7 @@ function MobileServiceClient(applicationUrl, applicationKey) {
     this.currentUser = null;
     this._serviceFilter = null;
     this._login = new MobileServiceLogin(this);
+
     this.getTable = function (tableName) {
         /// <summary>
         /// Gets a reference to a table and its data operations.
@@ -52,6 +68,10 @@ function MobileServiceClient(applicationUrl, applicationKey) {
         Validate.notNullOrEmpty(tableName, 'tableName');
         return new MobileServiceTable(tableName, this);
     };
+
+    if (Push) {
+        this.push = new Push(this);
+    }
 }
 
 // Export the MobileServiceClient class
@@ -128,7 +148,7 @@ MobileServiceClient.prototype.withFilter = function (serviceFilter) {
     return client;
 };
 
-MobileServiceClient.prototype._request = function (method, uriFragment, content, ignoreFilters, headers, callback) {
+MobileServiceClient.prototype._request = function (method, uriFragment, content, ignoreFilters, headers, features, callback) {
     /// <summary>
     /// Perform a web request and include the standard Mobile Services headers.
     /// </summary>
@@ -149,11 +169,19 @@ MobileServiceClient.prototype._request = function (method, uriFragment, content,
     /// <param name="headers" type="Object">
     /// Optional request headers
     /// </param>
+    /// <param name="features" type="Array">
+    /// Codes for features which are used in this request, sent to the server for telemetry.
+    /// </param>
     /// <param name="callback" type="function(error, response)">
     /// Handler that will be called on the response.
     /// </param>
 
     // Account for absent optional arguments
+    if (_.isNull(callback) && (typeof features === 'function')) {
+        callback = features;
+        features = null;
+    }
+
     if (_.isNull(callback) && (typeof headers === 'function')) {
         callback = headers;
         headers = null;
@@ -162,6 +190,11 @@ MobileServiceClient.prototype._request = function (method, uriFragment, content,
     if (_.isNull(callback) && (typeof ignoreFilters === 'function')) {
         callback = ignoreFilters;
         ignoreFilters = false;
+    }
+    
+    if (_.isNull(callback) && (typeof content === 'function')) {
+        callback = content;
+        content = null;
     }
 
     Validate.isString(method, 'method');
@@ -172,7 +205,11 @@ MobileServiceClient.prototype._request = function (method, uriFragment, content,
 
     // Create the absolute URI
     var options = { type: method.toUpperCase() };
-    options.url = _.url.combinePathSegments(this.applicationUrl, uriFragment);
+    if (_.url.isAbsoluteUrl(uriFragment)) {
+        options.url = uriFragment;
+    } else {
+        options.url = _.url.combinePathSegments(this.applicationUrl, uriFragment);
+    }
 
     // Set MobileServices authentication, application, User-Agent and telemetry headers
     options.headers = {};
@@ -191,6 +228,10 @@ MobileServiceClient.prototype._request = function (method, uriFragment, content,
     }
     if (!_.isNullOrEmpty["X-ZUMO-VERSION"]) {
         options.headers["X-ZUMO-VERSION"] = this.version;
+    }
+
+    if (_.isNull(options.headers[_zumoFeaturesHeaderName]) && features && features.length) {
+        options.headers[_zumoFeaturesHeaderName] = features.join(',');
     }
 
     // Add any content as JSON
@@ -230,6 +271,33 @@ MobileServiceClient.prototype._request = function (method, uriFragment, content,
     }
 };
 
+MobileServiceClient.prototype.loginWithOptions = Platform.async(
+     function (provider, options, callback) {
+         /// <summary>
+         /// Log a user into a Mobile Services application given a provider name with
+         /// given options.
+         /// </summary>
+         /// <param name="provider" type="String" mayBeNull="false">
+         /// Name of the authentication provider to use; one of 'facebook', 'twitter', 'google', 
+         /// 'windowsazureactivedirectory' (can also use 'aad')
+         /// or 'microsoftaccount'.
+         /// </param>
+         /// <param name="options" type="Object" mayBeNull="true">
+         /// Contains additional parameter information, valid values are:
+         ///    token: provider specific object with existing OAuth token to log in with
+         ///    useSingleSignOn: Only applies to Windows 8 clients.  Will be ignored on other platforms.
+         /// Indicates if single sign-on should be used. Single sign-on requires that the 
+         /// application's Package SID be registered with the Microsoft Azure Mobile Service, 
+         /// but it provides a better experience as HTTP cookies are supported so that users 
+         /// do not have to login in everytime the application is launched.
+         ///    parameters: Any additional provider specific query string parameters.
+         /// </param>
+         /// <param name="callback" type="Function" mayBeNull="true">
+         /// Optional callback accepting (error, user) parameters.
+         /// </param>
+         this._login.loginWithOptions(provider, options, callback);
+});
+
 MobileServiceClient.prototype.login = Platform.async(
     function (provider, token, useSingleSignOn, callback) {
         /// <summary>
@@ -238,6 +306,7 @@ MobileServiceClient.prototype.login = Platform.async(
         /// </summary>
         /// <param name="provider" type="String" mayBeNull="true">
         /// Name of the authentication provider to use; one of 'facebook', 'twitter', 'google', 
+        /// 'windowsazureactivedirectory' (can also use 'aad')
         /// or 'microsoftaccount'. If no provider is specified, the 'token' parameter
         /// is considered a Microsoft Account authentication token. If a provider is specified, 
         /// the 'token' parameter is considered a provider-specific authentication token.
@@ -248,7 +317,7 @@ MobileServiceClient.prototype.login = Platform.async(
         /// <param name="useSingleSignOn" type="Boolean" mayBeNull="true">
         /// Only applies to Windows 8 clients.  Will be ignored on other platforms.
         /// Indicates if single sign-on should be used. Single sign-on requires that the 
-        /// application's Package SID be registered with the Windows Azure Mobile Service, 
+        /// application's Package SID be registered with the Microsoft Azure Mobile Service, 
         /// but it provides a better experience as HTTP cookies are supported so that users 
         /// do not have to login in everytime the application is launched.
         /// </param>
@@ -306,8 +375,16 @@ MobileServiceClient.prototype.invokeApi = Platform.async(
             body = options.body;
             headers = options.headers;
         }
+
+        headers = headers || {};
+
         if (_.isNull(method)) {
             method = "POST";
+        }
+
+        // if not specified, default to return results in JSON format
+        if (_.isNull(headers.accept)) {
+            headers.accept = 'application/json';
         }
 
         // Construct the URL
@@ -317,6 +394,17 @@ MobileServiceClient.prototype.invokeApi = Platform.async(
             urlFragment = _.url.combinePathAndQuery(urlFragment, queryString);
         }
 
+        var features = [];
+        if (!_.isNullOrEmpty(body)) {
+            features.push(_.isString(body) ?
+                _zumoFeatures.GenericApiCall :
+                _zumoFeatures.JsonApiCall);
+        }
+
+        if (!_.isNull(parameters)) {
+            features.push(_zumoFeatures.AdditionalQueryParameters);
+        }
+
         // Make the request
         this._request(
             method,
@@ -324,11 +412,24 @@ MobileServiceClient.prototype.invokeApi = Platform.async(
             body,
             null,
             headers,
+            features,
             function (error, response) {
                 if (!_.isNull(error)) {
                     callback(error, null);
                 } else {
-                    if (response.getResponseHeader('Content-Type').toLowerCase().indexOf('json') != -1) {
+                    var contentType;
+                    if (typeof response.getResponseHeader !== 'undefined') { // (when not using IframeTransport, IE9)
+                        contentType = response.getResponseHeader('Content-Type');
+                    }
+
+                    // If there was no header / can't get one, try json
+                    if (!contentType) {
+                        try {
+                            response.result = _.fromJson(response.responseText);
+                        } catch(e) {
+                            // Do nothing, since we don't know the content-type, failing may be ok
+                        }
+                    } else if (contentType.toLowerCase().indexOf('json') !== -1) {
                         response.result = _.fromJson(response.responseText);
                     }
 
@@ -380,7 +481,6 @@ function getApplicationInstallationId() {
     return applicationInstallationId;
 }
 
-
 /// <summary>
 /// Get or set the static _applicationInstallationId by checking the settings
 /// and create the value if necessary.
@@ -392,4 +492,7 @@ MobileServiceClient._applicationInstallationId = getApplicationInstallationId();
 /// </summary>
 MobileServiceClient._userAgent = Platform.getUserAgent();
 
-
+/// <summary>
+/// The features that are sent to the server for telemetry.
+/// </summary>
+MobileServiceClient._zumoFeatures = _zumoFeatures;

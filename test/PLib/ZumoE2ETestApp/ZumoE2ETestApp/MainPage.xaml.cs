@@ -5,19 +5,13 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
-using Windows.Foundation;
-using Windows.Foundation.Collections;
-using Windows.UI.Popups;
+using Windows.Storage;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Controls.Primitives;
-using Windows.UI.Xaml.Data;
 using Windows.UI.Xaml.Input;
-using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Navigation;
 using ZumoE2ETestApp.Framework;
 using ZumoE2ETestApp.Tests;
@@ -37,7 +31,7 @@ namespace ZumoE2ETestApp
         public MainPage()
         {
             this.InitializeComponent();
-            this.allTests = TestStore.CreateTests();
+            this.allTests = TestStore.CreateTestGroups();
         }
 
         /// <summary>
@@ -58,41 +52,38 @@ namespace ZumoE2ETestApp
             }
         }
 
-        private void btnMainHelp_Click_1(object sender, RoutedEventArgs e)
-        {
-            Alert("Error", "Not implemented yet");
-        }
-
         private async void btnSaveAppInfo_Click_1(object sender, RoutedEventArgs e)
         {
+            ZumoTestGlobals.ResetInstance();
             SavedAppInfo appInfo = await AppInfoRepository.Instance.GetSavedAppInfo();
             string appUrl = this.txtAppUrl.Text;
             string appKey = this.txtAppKey.Text;
             if (string.IsNullOrEmpty(appUrl) || string.IsNullOrEmpty(appKey))
             {
-                await Alert("Error", "Please enter valid application URL / key");
+                await Util.MessageBox("Please enter valid application URL / key", "Error");
             }
             else
             {
                 if (appInfo.MobileServices.Any(ms => ms.AppKey == appKey && ms.AppUrl == appUrl))
                 {
-                    await Alert("Information", "Mobile service info already saved");
+                    await Util.MessageBox("Mobile service info already saved", "Information");
                 }
                 else
                 {
                     appInfo.MobileServices.Add(new MobileServiceInfo { AppUrl = appUrl, AppKey = appKey });
                     await AppInfoRepository.Instance.SaveAppInfo(appInfo);
-                    await Alert("Information", "Mobile service info successfully saved");
+                    await Util.MessageBox("Mobile service info successfully saved", "Information");
                 }
             }
         }
 
         private async void btnLoadAppInfo_Click_1(object sender, RoutedEventArgs e)
         {
+            ZumoTestGlobals.ResetInstance();
             SavedAppInfo savedAppInfo = await AppInfoRepository.Instance.GetSavedAppInfo();
             if (savedAppInfo.MobileServices.Count == 0)
             {
-                await Alert("Error", "There are no saved applications.");
+                await Util.MessageBox("There are no saved applications.", "Error");
             }
             else
             {
@@ -114,7 +105,7 @@ namespace ZumoE2ETestApp
             }
         }
 
-        private void lstTestGroups_SelectionChanged_1(object sender, SelectionChangedEventArgs e)
+        private async void lstTestGroups_SelectionChanged_1(object sender, SelectionChangedEventArgs e)
         {
             int selectedIndex = this.lstTestGroups.SelectedIndex;
             if (selectedIndex >= 0)
@@ -123,6 +114,32 @@ namespace ZumoE2ETestApp
                 List<ListViewForTest> sources = testGroup.GetTests().Select((t, i) => new ListViewForTest(i + 1, t)).ToList();
                 this.lstTests.ItemsSource = sources;
                 this.lblTestGroupTitle.Text = string.Format("{0}. {1}", selectedIndex + 1, testGroup.Name);
+                if (testGroup.Name.StartsWith(TestStore.AllTestsGroupName) && !string.IsNullOrEmpty(this.txtUploadLogsUrl.Text))
+                {
+                    await this.RunTestGroup(testGroup);
+                    int passed = testGroup.AllTests.Count(t => t.Status == TestStatus.Passed);
+                    int failed = testGroup.AllTests.Count(t => t.Status == TestStatus.Failed);
+                    int skipped = testGroup.AllTests.Count(t => t.Status == TestStatus.Skipped);
+                    string message = string.Format(CultureInfo.InvariantCulture, "Passed {0} of {1} tests (skipped {2})", passed, (passed + failed), skipped);
+                    if (failed == 0)
+                    {
+                        if (testGroup.Name == TestStore.AllTestsGroupName)
+                        {
+                            btnRunAllTests.Content = "Passed";
+                        }
+                        else
+                        {
+                            btnRunAllUnattendedTests.Content = "Passed";
+                        }
+                    }
+
+                    if (ZumoTestGlobals.ShowAlerts)
+                    {
+                        await Util.MessageBox(message, "Test group finished");
+                    }
+
+                    ZumoTestGlobals.ShowAlerts = true;
+                }
             }
             else
             {
@@ -132,22 +149,37 @@ namespace ZumoE2ETestApp
 
         private async void btnRunTests_Click_1(object sender, RoutedEventArgs e)
         {
+            btnRunTests.Content = "Cancel Run";
             int selectedIndex = this.lstTestGroups.SelectedIndex;
             if (selectedIndex >= 0)
             {
                 ZumoTestGroup testGroup = allTests[selectedIndex];
                 await this.RunTestGroup(testGroup);
                 int passed = testGroup.AllTests.Count(t => t.Status == TestStatus.Passed);
-                string message = string.Format(CultureInfo.InvariantCulture, "Passed {0} of {1} tests", passed, testGroup.AllTests.Count());
+                int failed = testGroup.AllTests.Count(t => t.Status == TestStatus.Failed);
+                int skipped = testGroup.AllTests.Count(t => t.Status == TestStatus.Skipped);
+                string message = string.Format(CultureInfo.InvariantCulture, "Passed {0} of {1} tests (skipped {2})", passed, (passed + failed), skipped);
                 await Util.MessageBox(message, "Test group finished");
             }
             else
             {
-                await Alert("Error", "Please select a test group.");
+                await Util.MessageBox("Please select a test group.", "Error");
+            }
+
+            var tb = (ToggleButton)sender;
+            if (!tb.IsChecked.HasValue || tb.IsChecked.Value)
+            {
+                tb.IsChecked = false;
             }
         }
 
-        private async Task RunTestGroup(ZumoTestGroup testGroup)
+        private void btnRunTests_Unchecked_1(object sender, RoutedEventArgs e)
+        {
+            btnRunTests.Content = "Run Tests";
+            this.StopTestGroup();
+        }
+
+        private async Task<bool> InitializeClient()
         {
             var appUrl = this.txtAppUrl.Text;
             var appKey = this.txtAppKey.Text;
@@ -164,40 +196,69 @@ namespace ZumoE2ETestApp
 
             if (error != null)
             {
-                await Alert("Error initializing client", error);
+                await Util.MessageBox(error, "Error initializing client");
+                return false;
             }
             else
             {
-                try
+                // Saving app info for future runs
+                var savedAppInfo = await AppInfoRepository.Instance.GetSavedAppInfo();
+                if (savedAppInfo.LastService == null || savedAppInfo.LastService.AppUrl != appUrl || savedAppInfo.LastService.AppKey != appKey)
                 {
-                    await testGroup.Run();
-                }
-                catch (Exception ex)
-                {
-                    error = string.Format(CultureInfo.InvariantCulture, "Unhandled exception: {0}", ex);
-                }
-
-                if (error != null)
-                {
-                    await Alert("Error", error);
-                }
-                else
-                {
-                    // Saving app info for future runs
-                    var savedAppInfo = await AppInfoRepository.Instance.GetSavedAppInfo();
-                    if (savedAppInfo.LastService == null || savedAppInfo.LastService.AppUrl != appUrl || savedAppInfo.LastService.AppKey != appKey)
+                    if (savedAppInfo.LastService == null)
                     {
-                        if (savedAppInfo.LastService == null)
-                        {
-                            savedAppInfo.LastService = new MobileServiceInfo();
-                        }
-
-                        savedAppInfo.LastService.AppKey = appKey;
-                        savedAppInfo.LastService.AppUrl = appUrl;
-                        await AppInfoRepository.Instance.SaveAppInfo(savedAppInfo);
+                        savedAppInfo.LastService = new MobileServiceInfo();
                     }
+
+                    savedAppInfo.LastService.AppKey = appKey;
+                    savedAppInfo.LastService.AppUrl = appUrl;
+                    savedAppInfo.LastUploadUrl = this.txtUploadLogsUrl.Text;
+                    await AppInfoRepository.Instance.SaveAppInfo(savedAppInfo);
                 }
+
+                return true;
             }
+        }
+
+        private ZumoTestGroup currentTestGroup;
+
+        private async Task RunTestGroup(ZumoTestGroup testGroup)
+        {
+            this.currentTestGroup = testGroup;
+            var clientInitialized = await InitializeClient();
+            if (!clientInitialized)
+            {
+                return;
+            }
+
+            string error = null;
+            try
+            {
+                await testGroup.Run();
+            }
+            catch (Exception ex)
+            {
+                error = string.Format(CultureInfo.InvariantCulture, "Unhandled exception: {0}", ex);
+            }
+
+            if (error != null)
+            {
+                await Util.MessageBox(error, "Error");
+            }
+
+            if (testGroup.Name.StartsWith(TestStore.AllTestsGroupName) && !string.IsNullOrEmpty(this.txtUploadLogsUrl.Text))
+            {
+                // Upload logs automatically if running all tests and write the the logs location to done.txt
+                var logsUploadedURL = await Util.UploadLogs(this.txtUploadLogsUrl.Text, string.Join("\n", testGroup.GetLogs()), "winstorecs", true);
+                StorageFolder storageFolder = KnownFolders.PicturesLibrary;
+                StorageFile logsUploadedFile = await storageFolder.CreateFileAsync(ZumoTestGlobals.LogsLocationFile, CreationCollisionOption.ReplaceExisting);
+                await FileIO.WriteTextAsync(logsUploadedFile, logsUploadedURL);
+            }
+        }
+
+        private void StopTestGroup()
+        {
+            currentTestGroup.Stop();
         }
 
         private void btnResetTests_Click_1(object sender, RoutedEventArgs e)
@@ -214,12 +275,12 @@ namespace ZumoE2ETestApp
                 }
                 else
                 {
-                    Alert("Error", "Please select a group to reset the tests from.");
+                    Util.MessageBox("Please select a group to reset the tests from.", "Error");
                 }
             }
             catch (Exception ex)
             {
-                Alert("Error", string.Format(CultureInfo.InvariantCulture, "Unhandled exception: {0}", ex));
+                Util.MessageBox(string.Format(CultureInfo.InvariantCulture, "Unhandled exception: {0}", ex), "Error");
             }
         }
 
@@ -251,13 +312,8 @@ namespace ZumoE2ETestApp
             }
             else
             {
-                await Alert("Error", "A test group needs to be selected");
+                await Util.MessageBox("A test group needs to be selected", "Error");
             }
-        }
-
-        private Task Alert(string title, string text)
-        {
-            return new MessageDialog(text, title).ShowAsync().AsTask();
         }
 
         private void lstTests_DoubleTapped_1(object sender, DoubleTappedRoutedEventArgs e)
@@ -287,7 +343,7 @@ namespace ZumoE2ETestApp
             var items = this.lstTests.SelectedItems;
             if (items.Count == 0)
             {
-                await Alert("Error", "No tests selected");
+                await Util.MessageBox("No tests selected", "Error");
             }
             else
             {
@@ -304,13 +360,32 @@ namespace ZumoE2ETestApp
         private void lstTests_SelectionChanged_1(object sender, SelectionChangedEventArgs e)
         {
             var selectedItems = this.lstTests.SelectedItems;
-            if (selectedItems.Count > 0)
+            this.btnRunSelected.IsEnabled = selectedItems.Count > 0;
+        }
+
+        private void btnRunAllTests_Click(object sender, RoutedEventArgs e)
+        {
+            ZumoTestGlobals.ShowAlerts = false;
+            for (int i = 0; i < this.allTests.Count; i++)
             {
-                this.btnRunSelected.Visibility = Windows.UI.Xaml.Visibility.Visible;
+                if (allTests[i].Name == TestStore.AllTestsGroupName)
+                {
+                    this.lstTestGroups.SelectedIndex = i;
+                    break;
+                }
             }
-            else
+        }
+
+        private void btnRunAllUnattendedTests_Click(object sender, RoutedEventArgs e)
+        {
+            ZumoTestGlobals.ShowAlerts = false;
+            for (int i = 0; i < this.allTests.Count; i++)
             {
-                this.btnRunSelected.Visibility = Windows.UI.Xaml.Visibility.Collapsed;
+                if (allTests[i].Name == TestStore.AllTestsUnattendedGroupName)
+                {
+                    this.lstTestGroups.SelectedIndex = i;
+                    break;
+                }
             }
         }
     }

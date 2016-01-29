@@ -3,11 +3,8 @@
 // ----------------------------------------------------------------------------
 
 using System;
-using System.Configuration;
-using System.Globalization;
 using System.IO;
 using System.IO.IsolatedStorage;
-using System.Windows;
 
 namespace Microsoft.WindowsAzure.MobileServices
 {
@@ -21,7 +18,16 @@ namespace Microsoft.WindowsAzure.MobileServices
         /// <summary>
         /// A singleton instance of the <see cref="ApplicationStorage"/>.
         /// </summary>
-        private static IApplicationStorage instance = new ApplicationStorage();
+        private static readonly IApplicationStorage instance = new ApplicationStorage();        
+
+        private ApplicationStorage() : this(string.Empty)
+        {            
+        }
+        
+        internal ApplicationStorage(string name)
+        {
+            this.StoragePrefix = name;
+        }
 
         /// <summary>
         /// A singleton instance of the <see cref="ApplicationStorage"/>.
@@ -33,6 +39,8 @@ namespace Microsoft.WindowsAzure.MobileServices
                 return instance;
             }
         }
+
+        private string StoragePrefix { get; set; }
 
         /// <summary>
         /// Tries to read a setting's value from application storage. 
@@ -52,7 +60,7 @@ namespace Microsoft.WindowsAzure.MobileServices
         {
             if (string.IsNullOrWhiteSpace(name))
             {
-                string message = Resources.IApplicationStorage_NullOrWhitespaceSettingName;
+                string message = "An application setting name must be provided. Null, empty or whitespace only names are not allowed.";
                 throw new ArgumentException(message);
             }
 
@@ -60,7 +68,7 @@ namespace Microsoft.WindowsAzure.MobileServices
             {
                 using (IsolatedStorageFile isoStore = IsolatedStorageFile.GetStore(IsolatedStorageScope.Assembly | IsolatedStorageScope.User, null, null))
                 {
-                    using (IsolatedStorageFileStream fileStream = isoStore.OpenFile(name, FileMode.OpenOrCreate, FileAccess.Read))
+                    using (IsolatedStorageFileStream fileStream = isoStore.OpenFile(string.Concat(this.StoragePrefix, name), FileMode.OpenOrCreate, FileAccess.Read))
                     {
                         using (var reader = new StreamReader(fileStream))
                         {
@@ -94,7 +102,7 @@ namespace Microsoft.WindowsAzure.MobileServices
         {
             if (string.IsNullOrWhiteSpace(name))
             {
-                string message = Resources.IApplicationStorage_NullOrWhitespaceSettingName;
+                string message = "An application setting name must be provided. Null, empty or whitespace only names are not allowed.";
                 throw new ArgumentException(message);
             }
 
@@ -102,16 +110,21 @@ namespace Microsoft.WindowsAzure.MobileServices
             {
                 using (IsolatedStorageFile isoStore = IsolatedStorageFile.GetStore(IsolatedStorageScope.Assembly | IsolatedStorageScope.User, null, null))
                 {
-                    using (IsolatedStorageFileStream fileStream = isoStore.OpenFile(name, FileMode.OpenOrCreate, FileAccess.Write))
+                    using (IsolatedStorageFileStream fileStream = isoStore.OpenFile(string.Concat(this.StoragePrefix, name), FileMode.OpenOrCreate, FileAccess.Write))
                     {
                         using (var writer = new StreamWriter(fileStream))
-                        {
-                            writer.WriteLine(value.ToString());
-                        }
+                        writer.WriteLine(value.ToString());
                     }
                 }
             }
-            catch { }
+            catch (Exception)
+            {
+            }
+        }
+
+        public void Save()
+        {
+            // This operation is a no-op in NetFramework
         }
     }
 }

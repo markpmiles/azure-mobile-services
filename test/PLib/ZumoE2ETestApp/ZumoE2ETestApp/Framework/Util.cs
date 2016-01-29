@@ -2,14 +2,20 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // ----------------------------------------------------------------------------
 
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Reflection;
+using System.Text;
+#if WP75
 using System.Threading;
+#endif
 using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
 
 namespace ZumoE2ETestApp.Framework
 {
@@ -29,6 +35,46 @@ namespace ZumoE2ETestApp.Framework
         {
             return new DateTime(dateTime.Year, dateTime.Month, dateTime.Day,
                 dateTime.Hour, dateTime.Minute, dateTime.Second, dateTime.Millisecond, dateTime.Kind);
+        }
+
+        public static async Task<string> UploadLogs(string uploadLogsUrl, string testLogs, string platform, bool allTests)
+        {
+            using (var client = new HttpClient())
+            {
+                string url = uploadLogsUrl + "?platform=" + platform;
+                if (allTests)
+                {
+                    url = url + "&allTests=true";
+                }
+
+                object clientVersion, runtimeVersion;
+                if (ZumoTestGlobals.Instance.GlobalTestParams.TryGetValue(ZumoTestGlobals.ClientVersionKeyName, out clientVersion))
+                {
+                    url = url + "&clientVersion=" + clientVersion;
+                }
+
+                if (ZumoTestGlobals.Instance.GlobalTestParams.TryGetValue(ZumoTestGlobals.RuntimeVersionKeyName, out runtimeVersion))
+                {
+                    url = url + "&runtimeVersion=" + runtimeVersion;
+                }
+
+                using (var request = new HttpRequestMessage(HttpMethod.Post, url))
+                {
+                    request.Content = new StringContent(testLogs, Encoding.UTF8, "text/plain");
+                    using (var response = await client.SendAsync(request))
+                    {
+                        var body = await response.Content.ReadAsStringAsync();
+                        var title = response.IsSuccessStatusCode ? "Upload successful" : "Error uploading logs";
+
+                        if (ZumoTestGlobals.ShowAlerts)
+                        {
+                            // do not show dialog if test run was started by the run all buttons; used in test automation scenarios
+                            await MessageBox(body, title);
+                        }
+                        return body;
+                    }
+                }
+            }
         }
 
         #region Methods which are different based on platforms
@@ -312,22 +358,48 @@ namespace ZumoE2ETestApp.Framework
                     return true;
                 case JTokenType.Object:
                     JObject expectedObject = (JObject)expected;
-                    JObject actualObject = (JObject)actual;
+                    Dictionary<string, string> expectedKeyMap = new Dictionary<string, string>();
                     foreach (var child in expectedObject)
                     {
-                        var key = child.Key;
+                        expectedKeyMap.Add(child.Key.ToLowerInvariant(), child.Key);
+                    }
+
+                    JObject actualObject = (JObject)actual;
+                    Dictionary<string, string> actualKeyMap = new Dictionary<string, string>();
+                    foreach (var child in actualObject)
+                    {
+                        actualKeyMap.Add(child.Key.ToLowerInvariant(), child.Key);
+                    }
+
+                    foreach (var child in expectedObject)
+                    {
+                        var key = child.Key.ToLowerInvariant();
                         if (key == "id") continue; // set by server, ignored at comparison
 
-                        if (actualObject[key] == null)
+                        if (!actualKeyMap.ContainsKey(key) || actualObject[actualKeyMap[key]] == null)
                         {
-                            errors.Add(string.Format("Expected object contains a pair with key {0}, actual does not.", key));
-                            return false;
-                        }
+                            // Still might be OK, if the missing value is default.
+                            var expectedObjectValue = expectedObject[expectedKeyMap[key]];
 
-                        if (!CompareJson(expectedObject[key], actualObject[key], errors))
+                            if (expectedObjectValue.Type == JTokenType.Null ||
+                                (expectedObjectValue.Type == JTokenType.Integer && expectedObjectValue.Value<long>() == 0) ||
+                                (expectedObjectValue.Type == JTokenType.Float && expectedObjectValue.Value<double>() == 0.0))
+                            {
+                                // No problem.
+                            }
+                            else
+                            {
+                                errors.Add(string.Format("Expected object contains a pair with key {0}, actual does not.", child.Key));
+                                return false;
+                            }
+                        }
+                        else
                         {
-                            errors.Add("Difference in object member with key " + key);
-                            return false;
+                            if (!CompareJson(expectedObject[expectedKeyMap[key]], actualObject[actualKeyMap[key]], errors))
+                            {
+                                errors.Add("Difference in object member with key " + key);
+                                return false;
+                            }
                         }
                     }
 
@@ -335,6 +407,40 @@ namespace ZumoE2ETestApp.Framework
                 default:
                     throw new ArgumentException("Don't know how to compare JToken of type " + expected.Type);
             }
+        }
+
+        public static void CamelCaseProps(JObject itemToUpdate)
+        {
+            List<string> keys = new List<string>();
+            foreach (var x in itemToUpdate)
+            {
+                keys.Add(x.Key);
+            }
+
+            foreach (var key in keys)
+            {
+                if (char.IsUpper(key[0]))
+                {
+                    StringBuilder camel = new StringBuilder(key);
+                    camel[0] = Char.ToLowerInvariant(key[0]);
+                    itemToUpdate[camel.ToString()] = itemToUpdate[key];
+                    itemToUpdate.Remove(key);
+                }
+            }
+        }
+
+        public static string GetSerializedId<T>()
+        {
+            var idName = typeof(T).GetTypeInfo()
+                .DeclaredProperties
+                .Where(p => p.Name.ToLowerInvariant() == "id")
+                .Select(p =>
+                {
+                    var a = p.GetCustomAttribute<JsonPropertyAttribute>();
+                    return a == null ? p.Name : a.PropertyName;
+                })
+                .First();
+            return idName;
         }
     }
 }

@@ -25,7 +25,7 @@ namespace Microsoft.WindowsAzure.MobileServices
         /// <summary>
         /// The AuthenticationBroker associated with the current Login action.
         /// </summary>
-        internal AuthenticationBroker Broker { get; set; }
+        internal static AuthenticationBroker Broker { get; set; }
 
         /// <summary>
         /// Initiatlizes the page by hooking up some event handlers.
@@ -36,7 +36,30 @@ namespace Microsoft.WindowsAzure.MobileServices
 
             BackKeyPress += LoginPage_BackKeyPress;
             browserControl.Navigating += BrowserControl_Navigating;
+            browserControl.LoadCompleted += BrowserControl_LoadCompleted;
             browserControl.NavigationFailed += BrowserControl_NavigationFailed;
+        }
+
+        /// <summary>
+        /// Handler for the browser control's load completed event.  We use this to detect when
+        /// to hide the progress bar and show the browser control.
+        /// </summary>
+        void BrowserControl_LoadCompleted(object sender, NavigationEventArgs e)
+        {
+            HideProgressBar();
+#if DEBUG
+            // For test automation purposes, we can register some scripts in the app's isolated storage
+            // which can "automatically" login in the providers. This way we can have an unattended test run.
+            bool testMode;
+            string loginScript;
+            if (System.IO.IsolatedStorage.IsolatedStorageSettings.ApplicationSettings.TryGetValue<bool>("testMode", out testMode) &&
+                testMode &&
+                System.IO.IsolatedStorage.IsolatedStorageSettings.ApplicationSettings.TryGetValue<string>("loginScript", out loginScript) &&
+                !string.IsNullOrEmpty(loginScript))
+            {
+                browserControl.InvokeScript("eval", loginScript);
+            }
+#endif
         }
 
         /// <summary>
@@ -48,6 +71,12 @@ namespace Microsoft.WindowsAzure.MobileServices
         protected override void OnNavigatedTo(NavigationEventArgs e)
         {
             base.OnNavigatedTo(e);
+
+            if (Broker == null)
+            {
+                throw new InvalidOperationException(string.Format("This page must be called from the type '{0}'.",
+                    typeof(AuthenticationBroker).FullName));
+            }
 
             // Make sure that there is an authentication operation in progress.
             // If not, we'll navigate back to the previous page.
@@ -95,6 +124,8 @@ namespace Microsoft.WindowsAzure.MobileServices
         /// </summary>
         void LoginPage_BackKeyPress(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            ShowProgressBar();
+
             responseData = "";
             responseStatus = PhoneAuthenticationStatus.UserCancel;
 
@@ -115,7 +146,7 @@ namespace Microsoft.WindowsAzure.MobileServices
                 authenticationFinished = true;
 
                 // Navigate back now.
-                browserControl.Source = new Uri("about:blank");
+                ShowProgressBar();
                 NavigationService.GoBack();
             }
         }
@@ -143,8 +174,26 @@ namespace Microsoft.WindowsAzure.MobileServices
             e.Handled = true;
 
             // Navigate back now.
-            browserControl.Source = new Uri("about:blank");
+            ShowProgressBar();
             NavigationService.GoBack();
+        }
+
+        /// <summary>
+        /// Shows the progress bar and hides the browser control.
+        /// </summary>
+        private void ShowProgressBar()
+        {
+            browserControl.Visibility = System.Windows.Visibility.Collapsed;
+            progress.Visibility = System.Windows.Visibility.Visible;
+        }
+
+        /// <summary>
+        /// Hides the progress bar and shows the browser control.
+        /// </summary>
+        private void HideProgressBar()
+        {
+            browserControl.Visibility = System.Windows.Visibility.Visible;
+            progress.Visibility = System.Windows.Visibility.Collapsed;
         }
     }
 }

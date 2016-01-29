@@ -3,12 +3,7 @@
 // ----------------------------------------------------------------------------
 
 using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Diagnostics;
 using System.Globalization;
-using System.IO;
-using System.Linq;
 using System.Reflection;
 
 namespace Microsoft.WindowsAzure.MobileServices
@@ -49,7 +44,7 @@ namespace Microsoft.WindowsAzure.MobileServices
                     //assume the platform assembly has the same key, same version and same culture
                     // as the assembly where the IPlatformProvider interface lives.
                     var provider = typeof(IPlatform);
-                    var asm = new AssemblyName(provider.Assembly.FullName);
+                    var asm = new AssemblyName(provider.GetTypeInfo().Assembly.FullName);
                     //change name to the specified name
                     asm.Name = PlatformAssemblyName;
                     var name = PlatformTypeFullName + ", " + asm.FullName;
@@ -85,11 +80,11 @@ namespace Microsoft.WindowsAzure.MobileServices
         /// </summary>
         private static void ThrowForMissingPlatformAssembly()
         {
-            AssemblyName portable = new AssemblyName(Assembly.GetExecutingAssembly().FullName);
+            AssemblyName portable = new AssemblyName(typeof(Platform).GetTypeInfo().Assembly.FullName);
 
             throw new InvalidOperationException(
                 string.Format(CultureInfo.InvariantCulture,
-                              Resources.Platform_AssemblyNotFound,
+                              "A Microsoft Azure Mobile Services assembly for the current platform was not found. Ensure that the current project references both {0} and the following platform-specific assembly: {1}.",
                             portable.Name,
                             PlatformAssemblyName));
         }

@@ -12,10 +12,18 @@ namespace ZumoE2ETestApp.Tests
 {
     public static class TestStore
     {
-        public static List<ZumoTestGroup> CreateTests()
+        public const string AllTestsGroupName = "All tests";
+        public const string AllTestsUnattendedGroupName = AllTestsGroupName + " (unattended)";
+
+        public static List<ZumoTestGroup> CreateTestGroups()
         {
             List<ZumoTestGroup> result = new List<ZumoTestGroup>
             {
+                ZumoSetupTests.CreateTests(),
+#if !NET45
+                ZumoLoginTests.CreateTests(),
+#endif
+                ZumoCustomApiTests.CreateTests(),
                 ZumoRoundTripTests.CreateTests(),
                 ZumoQueryTests.CreateTests(),
                 ZumoCUDTests.CreateTests(),
@@ -23,14 +31,37 @@ namespace ZumoE2ETestApp.Tests
 #if WINDOWS_PHONE
                 ZumoWP8PushTests.CreateTests(),
 #endif
-#if NETFX_CORE                
+
+#if NETFX_CORE
                 ZumoPushTests.CreateTests(),
+                ZumoOfflineTests.CreateTests(),
 #endif
-#if !NET45
-                ZumoLoginTests.CreateTests(),
-#endif
-                ZumoCustomApiTests.CreateTests(),
             };
+
+            ZumoTestGroup allTestsUnattendedGroup = CreateGroupWithAllTests(result, true);
+            ZumoTestGroup allTestsGroup = CreateGroupWithAllTests(result, false);
+            result.Add(allTestsUnattendedGroup);
+            result.Add(allTestsGroup);
+
+            return result;
+        }
+
+        private static ZumoTestGroup CreateGroupWithAllTests(List<ZumoTestGroup> testGroups, bool unattendedOnly)
+        {
+            ZumoTestGroup result = new ZumoTestGroup(unattendedOnly ? AllTestsUnattendedGroupName : AllTestsGroupName);
+            foreach (var group in testGroups)
+            {
+                result.AddTest(ZumoTestCommon.CreateSeparator("Start of group: " + group.Name));
+                foreach (var test in group.AllTests)
+                {
+                    if (test.CanRunUnattended || !unattendedOnly)
+                    {
+                        result.AddTest(test);
+                    }
+                }
+
+                result.AddTest(ZumoTestCommon.CreateSeparator("------------------"));
+            }
 
             return result;
         }

@@ -4,6 +4,8 @@
 
 using System;
 using System.Globalization;
+using System.Reflection;
+using System.Linq;
 
 namespace Microsoft.WindowsAzure.MobileServices
 {
@@ -16,7 +18,7 @@ namespace Microsoft.WindowsAzure.MobileServices
         /// <summary>
         /// A singleton instance of the <see cref="ApplicationStorage"/>.
         /// </summary>
-        private static IPlatformInformation instance = new PlatformInformation();
+        private static readonly IPlatformInformation instance = new PlatformInformation();
 
         /// <summary>
         /// A singleton instance of the <see cref="ApplicationStorage"/>.
@@ -80,5 +82,12 @@ namespace Microsoft.WindowsAzure.MobileServices
             }
         }
 
+        public string Version
+        {
+            get
+            {
+                return this.GetVersionFromAssemblyFileVersion();
+            }
+        }
     }
 }

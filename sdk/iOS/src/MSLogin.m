@@ -57,14 +57,20 @@
     void (^callCompletionIfAllDone)() = ^{
         allDoneCount++;
         if (allDoneCount == 2) {
-            [controller dismissViewControllerAnimated:animated completion:^{
-                if (completion) {
-                    completion(localUser, localError);
-                }
-                localUser = nil;
-                localError = nil;
-                loginController = nil;
-            }];
+            // Its possible for this to be triggered to close in the completion block of the present
+            // controller call, for example when there is no network connection.
+            // In order to avoid an error with the presentation animation still finishing, put the
+            // dismiss call onto the main queue and let this block finish running.
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [controller dismissViewControllerAnimated:animated completion:^{
+                    if (completion) {
+                        completion(localUser, localError);
+                    }
+                    localUser = nil;
+                    localError = nil;
+                    loginController = nil;
+                }];
+            });
         }
     };
     
@@ -79,6 +85,7 @@
         callCompletionIfAllDone();
     };
     
+    provider = [self normalizeProvider:provider];
     loginController = [self loginViewControllerWithProvider:provider
                                                  completion:loginCompletion];
     
@@ -96,6 +103,7 @@
 -(MSLoginController *) loginViewControllerWithProvider:(NSString *)provider
                                             completion:(MSClientLoginBlock)completion
 {
+    provider = [self normalizeProvider:provider];
     return [[MSLoginController alloc] initWithClient:self.client
                                             provider:provider
                                           completion:completion];
@@ -107,6 +115,7 @@
 {
     // Create the request
     NSError *error = nil;
+    provider = [self normalizeProvider:provider];
     NSURLRequest *request = [self requestForProvider:provider
                                             andToken:token
                                              orError:&error];
@@ -171,6 +180,16 @@
 
 #pragma mark * Private Methods
 
+-(NSString *) normalizeProvider:(NSString *)provider {
+    // Microsoft Azure Active Directory can be specified either in
+    // full or with the 'aad' abbreviation. The service REST API
+    // expects 'aad' only.
+    if ([[provider lowercaseString] isEqualToString:@"windowsazureactivedirectory"]) {
+        return @"aad";
+    } else {
+        return provider;
+    }
+}
 
 -(NSURLRequest *) requestForProvider:(NSString *)provider
                             andToken:(NSDictionary *)token
@@ -186,7 +205,7 @@
                              [NSString stringWithFormat:@"login/%@", provider]];
         request = [NSMutableURLRequest requestWithURL:URL];
         request.HTTPMethod = @"POST";
-        request.HTTPBody =requestBody;
+        request.HTTPBody = requestBody;
     }
     
     return request;

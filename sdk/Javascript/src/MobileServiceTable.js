@@ -18,6 +18,28 @@ var idPropertyName = "id";
 // .../{app}/collections/{coll}.
 var tableRouteSeperatorName = "tables";
 var idNames = ["ID", "Id", "id", "iD"];
+var nextLinkRegex = /^(.*?);\s*rel\s*=\s*(\w+)\s*$/;
+
+var MobileServiceSystemProperties = {
+    None: 0,
+    CreatedAt: 1,
+    UpdatedAt: 2,
+    Version: 4,
+    All: 0xFFFF
+};
+
+var MobileServiceSystemColumns = {
+    CreatedAt: "__createdAt",
+    UpdatedAt: "__updatedAt",
+    Version: "__version"
+};
+
+Platform.addToMobileServicesClientNamespace({
+    MobileServiceTable:
+        {
+            SystemProperties: MobileServiceSystemProperties
+        }
+});
 
 function MobileServiceTable(tableName, client) {
     /// <summary>
@@ -47,6 +69,8 @@ function MobileServiceTable(tableName, client) {
         /// </returns>
         return client;
     };
+
+    this.systemProperties = 0;
 }
 
 // Export the MobileServiceTable class
@@ -105,10 +129,15 @@ MobileServiceTable.prototype._read = function (query, parameters, callback) {
     var tableName = this.getTableName();
     var queryString = null;
     var projection = null;
+    var features = [];
     if (_.isString(query)) {
         queryString = query;
+        if (!_.isNullOrEmpty(query)) {
+            features.push(WindowsAzure.MobileServiceClient._zumoFeatures.TableReadRaw);
+        }
     } else if (_.isObject(query) && !_.isNull(query.toOData)) {
         if (query.getComponents) {
+            features.push(WindowsAzure.MobileServiceClient._zumoFeatures.TableReadQuery);
             var components = query.getComponents();
             projection = components.projection;
             if (components.table) {
@@ -129,7 +158,10 @@ MobileServiceTable.prototype._read = function (query, parameters, callback) {
         }
     }
 
+    addQueryParametersFeaturesIfApplicable(features, parameters);
+
     // Add any user-defined query string parameters
+    parameters = addSystemProperties(parameters, this.systemProperties, queryString);
     if (!_.isNull(parameters)) {
         var userDefinedQueryString = _.url.getQueryString(parameters);
         if (!_.isNullOrEmpty(queryString)) {
@@ -141,9 +173,12 @@ MobileServiceTable.prototype._read = function (query, parameters, callback) {
     }
     
     // Construct the URL
-    var urlFragment = _.url.combinePathSegments(tableRouteSeperatorName, tableName);
-    if (!_.isNull(queryString)) {
-        urlFragment = _.url.combinePathAndQuery(urlFragment, queryString);
+    var urlFragment = queryString;
+    if (!_.url.isAbsoluteUrl(urlFragment)) {
+        urlFragment = _.url.combinePathSegments(tableRouteSeperatorName, tableName);
+        if (!_.isNull(queryString)) {
+            urlFragment = _.url.combinePathAndQuery(urlFragment, queryString);
+        }
     }
 
     // Make the request
@@ -151,6 +186,9 @@ MobileServiceTable.prototype._read = function (query, parameters, callback) {
         'GET',
         urlFragment,
         null,
+        false,
+        null,
+        features,
         function (error, response) {
             var values = null;
             if (_.isNull(error)) {
@@ -174,6 +212,24 @@ MobileServiceTable.prototype._read = function (query, parameters, callback) {
                     var i = 0;
                     for (i = 0; i < values.length; i++) {
                         values[i] = projection.call(values[i]);
+                    }
+                }
+
+                // Grab link header when possible
+                if (Array.isArray(values) && response.getResponseHeader && _.isNull(values.nextLink)) {
+                    try {
+                        var link = response.getResponseHeader('Link');
+                        if (!_.isNullOrEmpty(link)) {
+                            var result = nextLinkRegex.exec(link);
+
+                            // Only add nextLink when relation is next
+                            if (result && result.length === 3 && result[2] == 'next') {
+                                values.nextLink = result[1];
+                            }
+                        }
+                    } catch (ex) {
+                        // If cors doesn't allow us to access the Link header
+                        // Just continue on without it
                     }
                 }
             }
@@ -211,16 +267,33 @@ MobileServiceTable.prototype.insert = Platform.async(
         }
         Validate.notNull(callback, 'callback');
 
-        for (var i in idNames) {            
-            if (!_.isNullOrZero(instance[idNames[i]])) {
-                throw _.format(
-                    Platform.getResourceString("MobileServiceTable_InsertIdAlreadySet"),
-                    idPropertyName);
+        // Integer Ids can not have any Id set
+        for (var i in idNames) {
+            var id = instance[idNames[i]];
+
+            if (!_.isNullOrZero(id)) {
+                if (_.isString(id)) {
+                    // String Id's are allowed iif using 'id'
+                    if (idNames[i] !== idPropertyName) {
+                        throw _.format(
+                            Platform.getResourceString("MobileServiceTable_InsertIdAlreadySet"),
+                            idPropertyName);
+                    } else {
+                        Validate.isValidId(id, idPropertyName);
+                    }
+                } else {
+                    throw _.format(
+                        Platform.getResourceString("MobileServiceTable_InsertIdAlreadySet"),
+                        idPropertyName);
+                }
             }
         }
 
+        var features = addQueryParametersFeaturesIfApplicable([], parameters);
+
         // Construct the URL
         var urlFragment = _.url.combinePathSegments(tableRouteSeperatorName, this.getTableName());
+        parameters = addSystemProperties(parameters, this.systemProperties);
         if (!_.isNull(parameters)) {
             var queryString = _.url.getQueryString(parameters);
             urlFragment = _.url.combinePathAndQuery(urlFragment, queryString);
@@ -231,12 +304,14 @@ MobileServiceTable.prototype.insert = Platform.async(
             'POST',
             urlFragment,
             instance,
+            false,
+            null,
+            features,
             function (error, response) {
                 if (!_.isNull(error)) {
                     callback(error, null);
                 } else {
-                    var result = _.fromJson(response.responseText);
-
+                    var result = getItemFromResponse(response);
                     result = Platform.allowPlatformToMutateOriginal(instance, result);
                     callback(null, result);
                 }
@@ -257,6 +332,10 @@ MobileServiceTable.prototype.update = Platform.async(
         /// <param name="callback" type="Function">
         /// The callback to invoke when the update is complete.
         /// </param>
+        var version,
+            headers = {},
+            features = [],
+            serverInstance;
 
         // Account for absent optional arguments
         if (_.isNull(callback) && (typeof parameters === 'function')) {
@@ -266,17 +345,32 @@ MobileServiceTable.prototype.update = Platform.async(
 
         // Validate the arguments
         Validate.notNull(instance, 'instance');
-        Validate.notNullOrZero(instance[idPropertyName], 'instance.' + idPropertyName);
+        Validate.isValidId(instance[idPropertyName], 'instance.' + idPropertyName);
         if (!_.isNull(parameters)) {
             Validate.isValidParametersObject(parameters, 'parameters');
         }
         Validate.notNull(callback, 'callback');
-    
+
+        if (_.isString(instance[idPropertyName])) {
+            version = instance.__version;
+            serverInstance = removeSystemProperties(instance);
+        } else {
+            serverInstance = instance;
+        }
+
+        if (!_.isNullOrEmpty(version)) {
+            headers['If-Match'] = getEtagFromVersion(version);
+            features.push(WindowsAzure.MobileServiceClient._zumoFeatures.OptimisticConcurrency);
+        }
+
+        features = addQueryParametersFeaturesIfApplicable(features, parameters);
+        parameters = addSystemProperties(parameters, this.systemProperties);
+
         // Construct the URL
         var urlFragment =  _.url.combinePathSegments(
                 tableRouteSeperatorName,
                 this.getTableName(),
-                instance[idPropertyName].toString());
+                encodeURIComponent(instance[idPropertyName].toString()));
         if (!_.isNull(parameters)) {
             var queryString = _.url.getQueryString(parameters);
             urlFragment = _.url.combinePathAndQuery(urlFragment, queryString);
@@ -286,12 +380,16 @@ MobileServiceTable.prototype.update = Platform.async(
         this.getMobileServiceClient()._request(
             'PATCH',
             urlFragment,
-            instance,
+            serverInstance,
+            false,
+            headers,
+            features,
             function (error, response) {
                 if (!_.isNull(error)) {
-                    callback(error, null);
+                    setServerItemIfPreconditionFailed(error);
+                    callback(error);
                 } else {
-                    var result = _.fromJson(response.responseText);                    
+                    var result = getItemFromResponse(response);
                     result = Platform.allowPlatformToMutateOriginal(instance, result);
                     callback(null, result);
                 }
@@ -322,9 +420,13 @@ MobileServiceTable.prototype.refresh = Platform.async(
 
         // Validate the arguments
         Validate.notNull(instance, 'instance');
-        if (_.isNullOrZero(instance[idPropertyName]))
+        if (!_.isValidId(instance[idPropertyName], idPropertyName))
         {
-            callback(null, instance);
+            if (typeof instance[idPropertyName] === 'string' && instance[idPropertyName] !== '') {
+                throw _.format(Platform.getResourceString("Validate_InvalidId"), idPropertyName);
+            } else {
+                callback(null, instance);
+            }
             return;
         }
 
@@ -334,22 +436,33 @@ MobileServiceTable.prototype.refresh = Platform.async(
         Validate.notNull(callback, 'callback');
 
         // Construct the URL
-
         var urlFragment = _.url.combinePathSegments(
                 tableRouteSeperatorName,
                 this.getTableName());
-        urlFragment = _.url.combinePathAndQuery(urlFragment, "?$filter=id eq " + instance[idPropertyName].toString());
+
+        if (typeof instance[idPropertyName] === 'string') {
+            var id = encodeURIComponent(instance[idPropertyName]).replace(/\'/g, '%27%27');
+            urlFragment = _.url.combinePathAndQuery(urlFragment, "?$filter=id eq '" + id + "'");
+        } else {
+            urlFragment = _.url.combinePathAndQuery(urlFragment, "?$filter=id eq " + encodeURIComponent(instance[idPropertyName].toString()));
+        }
 
         if (!_.isNull(parameters)) {
             var queryString = _.url.getQueryString(parameters);
             urlFragment = _.url.combinePathAndQuery(urlFragment, queryString);
         }
 
+        var features = [WindowsAzure.MobileServiceClient._zumoFeatures.TableRefreshCall];
+        features = addQueryParametersFeaturesIfApplicable(features, parameters);
+
         // Make the request
         this.getMobileServiceClient()._request(
             'GET',
             urlFragment,
             instance,
+            false,
+            null,
+            features,
             function (error, response) {
                 if (!_.isNull(error)) {
                     callback(error, null);
@@ -360,9 +473,10 @@ MobileServiceTable.prototype.refresh = Platform.async(
                     }
 
                     if (!result) {
-                        throw _.format(
+                        var message =_.format(
                             Platform.getResourceString("MobileServiceTable_NotSingleObject"),
                             idPropertyName);
+                        callback(_.createError(message), null);
                     }
 
                     result = Platform.allowPlatformToMutateOriginal(instance, result);
@@ -393,7 +507,7 @@ MobileServiceTable.prototype.lookup = Platform.async(
         }
 
         // Validate the arguments
-        Validate.notNullOrZero(id, idPropertyName);
+        Validate.isValidId(id, idPropertyName);
         if (!_.isNull(parameters)) {
             Validate.isValidParametersObject(parameters);
         }
@@ -403,7 +517,11 @@ MobileServiceTable.prototype.lookup = Platform.async(
         var urlFragment = _.url.combinePathSegments(
                 tableRouteSeperatorName,
                 this.getTableName(),
-                id.toString());
+                encodeURIComponent(id.toString()));
+
+        var features = addQueryParametersFeaturesIfApplicable([], parameters);
+
+        parameters = addSystemProperties(parameters, this.systemProperties);
         if (!_.isNull(parameters)) {
             var queryString = _.url.getQueryString(parameters);
             urlFragment = _.url.combinePathAndQuery(urlFragment, queryString);
@@ -414,11 +532,14 @@ MobileServiceTable.prototype.lookup = Platform.async(
             'GET',
             urlFragment,
             null,
+            false,
+            null,
+            features,
             function (error, response) {
                 if (!_.isNull(error)) {
                     callback(error, null);
                 } else {
-                    var result = _.fromJson(response.responseText);
+                    var result = getItemFromResponse(response);
                     callback(null, result);
                 }
             });
@@ -443,21 +564,34 @@ MobileServiceTable.prototype.del = Platform.async(
         if (_.isNull(callback) && (typeof parameters === 'function')) {
             callback = parameters;
             parameters = null;
-        }
+        }        
 
         // Validate the arguments
         Validate.notNull(instance, 'instance');
-        Validate.notNullOrZero(instance[idPropertyName], 'instance.' + idPropertyName);
+        Validate.isValidId(instance[idPropertyName], 'instance.' + idPropertyName);
+        Validate.notNull(callback, 'callback');
+
+        var headers = {};
+        var features = [];
+        if (_.isString(instance[idPropertyName])) {
+            if (!_.isNullOrEmpty(instance.__version)) {
+                headers['If-Match'] = getEtagFromVersion(instance.__version);
+                features.push(WindowsAzure.MobileServiceClient._zumoFeatures.OptimisticConcurrency);
+            }
+        }
+
+        features = addQueryParametersFeaturesIfApplicable(features, parameters);
+
+        parameters = addSystemProperties(parameters, this.systemProperties);
         if (!_.isNull(parameters)) {
             Validate.isValidParametersObject(parameters);
         }
-        Validate.notNull(callback, 'callback');
 
         // Contruct the URL
         var urlFragment =  _.url.combinePathSegments(
                 tableRouteSeperatorName,
                 this.getTableName(),
-                instance[idPropertyName].toString());
+                encodeURIComponent(instance[idPropertyName].toString()));
         if (!_.isNull(parameters)) {
             var queryString = _.url.getQueryString(parameters);
             urlFragment = _.url.combinePathAndQuery(urlFragment, queryString);
@@ -468,7 +602,13 @@ MobileServiceTable.prototype.del = Platform.async(
             'DELETE',
             urlFragment,
             null,
+            false,
+            headers,
+            features,
             function (error, response) {
+                if (!_.isNull(error)) {
+                    setServerItemIfPreconditionFailed(error);
+                }
                 callback(error);
             });
     });
@@ -507,4 +647,104 @@ var i = 0;
 for (; i < queryOperators.length; i++) {
     // Avoid unintended closure capture
     copyOperator(queryOperators[i]);
+}
+
+// Table system properties
+function removeSystemProperties(instance) {
+    var copy = {};
+    for(var property in instance) {
+        if (property.substr(0, 2) !== '__') {
+            copy[property] = instance[property];
+        }
+    }
+    return copy;
+}
+
+function addSystemProperties(parameters, properties, querystring) {
+    if (properties === MobileServiceSystemProperties.None || (typeof querystring === 'string' && querystring.toLowerCase().indexOf('__systemproperties') >= 0)) {
+        return parameters;
+    }
+
+    // Initialize an object if none passed in
+    parameters = parameters || {};
+
+    // Don't override system properties if already set
+    if(!_.isNull(parameters.__systemProperties)) {
+        return parameters;
+    }
+
+    if (properties === MobileServiceSystemProperties.All) {
+        parameters.__systemProperties = '*';
+    } else {
+        var options = [];
+        if (MobileServiceSystemProperties.CreatedAt & properties) {
+            options.push(MobileServiceSystemColumns.CreatedAt);
+        }
+        if (MobileServiceSystemProperties.UpdatedAt & properties) {
+            options.push(MobileServiceSystemColumns.UpdatedAt);
+        }
+        if (MobileServiceSystemProperties.Version & properties) {
+            options.push(MobileServiceSystemColumns.Version);
+        }
+        parameters.__systemProperties = options.join(',');
+    }
+
+    return parameters;
+}
+
+// Add double quotes and unescape any internal quotes
+function getItemFromResponse(response) {
+    var result = _.fromJson(response.responseText);
+    if (response.getResponseHeader) {
+        var eTag = response.getResponseHeader('ETag');
+        if (!_.isNullOrEmpty(eTag)) {
+            result.__version = getVersionFromEtag(eTag);
+        }
+    }
+    return result;
+}
+
+// Converts an error to precondition failed error
+function setServerItemIfPreconditionFailed(error) {
+    if (error.request && error.request.status === 412) {
+        error.serverInstance = _.fromJson(error.request.responseText);
+    }
+}
+
+// Add wrapping double quotes and escape all double quotes
+function getEtagFromVersion(version) {
+    var result = version.replace(/\"/g, '\\\"');
+    return "\"" + result + "\"";
+}
+
+// Remove surrounding double quotes and unescape internal quotes
+function getVersionFromEtag(etag) {
+    var len = etag.length,
+        result = etag;
+
+    if (len > 1 && etag[0] === '"' && etag[len - 1] === '"') {
+        result = etag.substr(1, len - 2);
+    }
+    return result.replace(/\\\"/g, '"');
+}
+
+// Updates and returns the headers parameters with features used in the call
+function addQueryParametersFeaturesIfApplicable(features, userQueryParameters) {
+    var hasQueryParameters = false;
+    if (userQueryParameters) {
+        if (Array.isArray(userQueryParameters)) {
+            hasQueryParameters = userQueryParameters.length > 0;
+        } else if (_.isObject(userQueryParameters)) {
+            for (var k in userQueryParameters) {
+                hasQueryParameters = true;
+                break;
+            }
+        }
+    }
+
+    if (hasQueryParameters) {
+        features.push(WindowsAzure.MobileServiceClient._zumoFeatures.AdditionalQueryParameters);
+    }
+
+    return features;
 }

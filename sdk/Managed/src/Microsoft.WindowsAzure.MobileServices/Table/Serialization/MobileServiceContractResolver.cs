@@ -4,7 +4,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
@@ -21,15 +20,31 @@ namespace Microsoft.WindowsAzure.MobileServices
     public class MobileServiceContractResolver : DefaultContractResolver
     {
         /// <summary>
+        /// The string prefix used to indicate system properties
+        /// </summary>
+        internal const string SystemPropertyPrefix = "__";
+
+        /// <summary>
         /// The property names that are all aliased to be the id of an instance.
         /// </summary>
-        private static readonly string[] idPropertyNames = {"id", "Id", "ID"};
+        private static readonly string[] idPropertyNames = { "id", "Id", "ID" };
+
+        /// <summary>
+        /// The system property names with the correct prefix mapped to the enum values
+        /// </summary>
+        private static readonly Dictionary<string, MobileServiceSystemProperties> systemPropertyNameToEnum =
+            new Dictionary<string, MobileServiceSystemProperties>(StringComparer.OrdinalIgnoreCase) { 
+                { GetSystemPropertyString(MobileServiceSystemProperties.CreatedAt), MobileServiceSystemProperties.CreatedAt },
+                { GetSystemPropertyString(MobileServiceSystemProperties.UpdatedAt), MobileServiceSystemProperties.UpdatedAt } ,
+                { GetSystemPropertyString(MobileServiceSystemProperties.Version), MobileServiceSystemProperties.Version },
+                { GetSystemPropertyString(MobileServiceSystemProperties.Deleted), MobileServiceSystemProperties.Deleted }
+        };
 
         /// <summary>
         /// A cache of the id <see cref="JsonProperty"/> for a given type. Used to
         /// get and set the id value of instances.
         /// </summary>
-        private readonly Dictionary<Type, JsonProperty> idPropertyCache =  new Dictionary<Type, JsonProperty>();
+        private readonly Dictionary<Type, JsonProperty> idPropertyCache = new Dictionary<Type, JsonProperty>();
 
         /// <summary>
         /// A cache of <see cref="JsonProperty"/> instances for a given 
@@ -40,11 +55,16 @@ namespace Microsoft.WindowsAzure.MobileServices
         private readonly Dictionary<MemberInfo, JsonProperty> jsonPropertyCache = new Dictionary<MemberInfo, JsonProperty>();
 
         /// <summary>
+        /// A cache of the system properties supported for a given type.
+        /// </summary>
+        private readonly Dictionary<Type, MobileServiceSystemProperties> systemPropertyCache = new Dictionary<Type, MobileServiceSystemProperties>();
+
+        /// <summary>
         /// A cache of table names for a given Type that accounts for table renaming 
         /// via the DataContractAttribute, DataTableAttribute and/or the JsonObjectAttribute.
         /// </summary>
-        private static readonly Dictionary<Type, string> tableNameCache = new Dictionary<Type, string>();
-
+        private readonly Dictionary<Type, string> tableNameCache = new Dictionary<Type, string>();
+        
         /// <summary>
         /// Indicates if the property names should be camel-cased when serialized
         /// out into JSON.
@@ -65,12 +85,12 @@ namespace Microsoft.WindowsAzure.MobileServices
         {
             // Lookup the Mobile Services name of the Type and use that
             string name = null;
-            if (!tableNameCache.TryGetValue(type, out name))
+            if (!this.tableNameCache.TryGetValue(type, out name))
             {
                 // By default, use the type name itself
                 name = type.Name;
 
-                DataContractAttribute dataContractAttribute = type.GetCustomAttributes(typeof(DataContractAttribute), true)
+                DataContractAttribute dataContractAttribute = type.GetTypeInfo().GetCustomAttributes(typeof(DataContractAttribute), true)
                                                                   .FirstOrDefault() as DataContractAttribute;
                 if (dataContractAttribute != null)
                 {
@@ -80,8 +100,8 @@ namespace Microsoft.WindowsAzure.MobileServices
                     }
                 }
 
-                JsonContainerAttribute jsonContainerAttribute = type.GetCustomAttributes(typeof(JsonContainerAttribute), true)
-                                                                    .FirstOrDefault() as JsonContainerAttribute; 
+                JsonContainerAttribute jsonContainerAttribute = type.GetTypeInfo().GetCustomAttributes(typeof(JsonContainerAttribute), true)
+                                                                    .FirstOrDefault() as JsonContainerAttribute;
                 if (jsonContainerAttribute != null)
                 {
                     if (!string.IsNullOrWhiteSpace(jsonContainerAttribute.Title))
@@ -90,17 +110,20 @@ namespace Microsoft.WindowsAzure.MobileServices
                     }
                 }
 
-                DataTableAttribute dataTableAttribute = type.GetCustomAttributes(typeof(DataTableAttribute), true)
+                DataTableAttribute dataTableAttribute = type.GetTypeInfo().GetCustomAttributes(typeof(DataTableAttribute), true)
                                                             .FirstOrDefault() as DataTableAttribute;
                 if (dataTableAttribute != null)
                 {
-                    if (!string.IsNullOrWhiteSpace(dataTableAttribute.Name))
+                    if (!string.IsNullOrEmpty(dataTableAttribute.Name))
                     {
                         name = dataTableAttribute.Name;
                     }
                 }
 
-                tableNameCache[type] = name;
+                this.tableNameCache[type] = name;
+
+                // Build the JsonContract now to catch any contract errors early
+                this.CreateContract(type);
             }
 
             return name;
@@ -118,31 +141,44 @@ namespace Microsoft.WindowsAzure.MobileServices
         /// </returns>
         public virtual JsonProperty ResolveIdProperty(Type type)
         {
+            return ResolveIdProperty(type, throwIfNotFound: true);
+        }
+
+        internal JsonProperty ResolveIdProperty(Type type, bool throwIfNotFound)
+        {
             JsonProperty property = null;
             if (!this.idPropertyCache.TryGetValue(type, out property))
             {
-                JsonContract contract = ResolveContract(type);
-                JsonObjectContract objectContract = contract as JsonObjectContract;
-                if (objectContract != null)
-                {
-                    property = objectContract.Properties.Where(p => string.Equals(p.PropertyName, MobileServiceUrlBuilder.IdPropertyName)).FirstOrDefault();
-                    if (property != null)
-                    {
-                        this.idPropertyCache[type] = property;
-                    }
-                }
+                ResolveContract(type);
+                this.idPropertyCache.TryGetValue(type, out property);
             }
 
-            if (property == null)
+            if (property == null && throwIfNotFound)
             {
                 throw new InvalidOperationException(
                     string.Format(CultureInfo.InvariantCulture,
-                        Resources.MobileServiceContractResolver_MemberNotFound,
-                        MobileServiceUrlBuilder.IdPropertyName,
+                        "No '{0}' member found on type '{1}'.",
+                        MobileServiceSystemColumns.Id,
                         type.FullName));
             }
 
-           return property;
+            return property;
+        }
+
+        /// <summary>
+        /// Returns the system properties as a comma seperated list for a 
+        /// given type. Returns null if the type does not support system properties.
+        /// </summary>
+        /// <param name="type">The type for which to get the system properties.</param>
+        /// <returns>
+        /// The system properties as a comma seperated list for the given type or null 
+        /// if the type does not support system properties.
+        /// </returns>
+        public virtual MobileServiceSystemProperties ResolveSystemProperties(Type type)
+        {
+            MobileServiceSystemProperties systemProperties = MobileServiceSystemProperties.None;
+            this.systemPropertyCache.TryGetValue(type, out systemProperties);
+            return systemProperties;
         }
 
         /// <summary>
@@ -161,16 +197,8 @@ namespace Microsoft.WindowsAzure.MobileServices
             JsonProperty property = null;
             if (!this.jsonPropertyCache.TryGetValue(member, out property))
             {
-                JsonContract contract = ResolveContract(member.DeclaringType);
-                JsonObjectContract objectContract = contract as JsonObjectContract;
-                if (objectContract != null)
-                {
-                    property = objectContract.Properties.Where(p => string.Equals(p.UnderlyingName, member.Name)).FirstOrDefault();
-                    if (property != null)
-                    {
-                        this.jsonPropertyCache[member] = property;
-                    }
-                }
+                ResolveContract(member.DeclaringType);
+                this.jsonPropertyCache.TryGetValue(member, out property);
             }
 
             return property;
@@ -192,10 +220,10 @@ namespace Microsoft.WindowsAzure.MobileServices
         {
             if (this.CamelCasePropertyNames)
             {
-                if (!string.IsNullOrEmpty(propertyName) && char.IsUpper(propertyName[0]))
+                if (!string.IsNullOrWhiteSpace(propertyName) && char.IsUpper(propertyName[0]))
                 {
                     string original = propertyName;
-                    propertyName = char.ToLower(propertyName[0], CultureInfo.InvariantCulture).ToString();
+                    propertyName = char.ToLower(propertyName[0]).ToString();
                     if (original.Length > 1)
                     {
                         propertyName += original.Substring(1);
@@ -228,49 +256,46 @@ namespace Microsoft.WindowsAzure.MobileServices
         {
             JsonObjectContract contract = base.CreateObjectContract(type);
 
-            DataContractAttribute dataContractAttribute = type.GetCustomAttributes(typeof(DataContractAttribute), true)
+            DataContractAttribute dataContractAttribute = type.GetTypeInfo().GetCustomAttributes(typeof(DataContractAttribute), true)
                                                               .FirstOrDefault() as DataContractAttribute;
             if (dataContractAttribute == null)
             {
                 // Make sure the type does not have a base class with a [DataContract]
-                Type baseTypeWithDataContract = type.BaseType;
+                Type baseTypeWithDataContract = type.GetTypeInfo().BaseType;
                 while (baseTypeWithDataContract != null)
                 {
-                    if (baseTypeWithDataContract.GetCustomAttributes(typeof(DataContractAttribute), true).Any())
+                    if (baseTypeWithDataContract.GetTypeInfo().GetCustomAttributes(typeof(DataContractAttribute), true).Any())
                     {
                         break;
                     }
                     else
                     {
-                        baseTypeWithDataContract = baseTypeWithDataContract.BaseType;
+                        baseTypeWithDataContract = baseTypeWithDataContract.GetTypeInfo().BaseType;
                     }
-                } 
+                }
 
                 if (baseTypeWithDataContract != null)
                 {
                     throw new NotSupportedException(
                             string.Format(CultureInfo.InvariantCulture,
-                            Resources.MobileServiceContractResolver_TypeNoDataContractButBaseWithDataContract,
-                            type.FullName, 
+                            "The type '{0}' does not have a DataContractAttribute, but the type derives from the type '{1}', which does have a DataContractAttribute. If a type has a DataContractAttribute, any type that derives from that type must also have a DataContractAttribute.",
+                            type.FullName,
                             baseTypeWithDataContract.FullName));
                 }
-                
+
                 // [DataMember] attributes on members without a [DataContract]
                 // attribute on the type itself used to be honored.  Now with JSON.NET, [DataMember]
                 // attributes are ignored if there is no [DataContract] attribute on the type.
                 // To ensure types are not serialized differently, an exception must be thrown if this 
                 // type is using [DataMember] attributes without a [DataContract] on the type itself.
-                if (type.GetMembers(BindingFlags.Public |
-                                    BindingFlags.NonPublic |
-                                    BindingFlags.FlattenHierarchy |
-                                    BindingFlags.Instance) 
+                if (type.GetRuntimeProperties()
                          .Where( m => m.GetCustomAttributes(typeof(DataMemberAttribute), true)
                                        .FirstOrDefault() != null)
-                         .Any())      
+                         .Any())
                 {
                     throw new NotSupportedException(
                         string.Format(CultureInfo.InvariantCulture,
-                        Resources.MobileServiceContractResolver_TypeWithDataMemberButNoDataContract,
+                        "The type '{0}' has one or members with a DataMemberAttribute, but the type itself does not have a DataContractAttribute. Use the Newtonsoft.Json.JsonPropertyAttribute in place of the DataMemberAttribute and set the PropertyName to the desired name.",
                         type.FullName));
                 }
             }
@@ -301,20 +326,7 @@ namespace Microsoft.WindowsAzure.MobileServices
         protected override JsonProperty CreateProperty(MemberInfo member, MemberSerialization memberSerialization)
         {
             JsonProperty property = base.CreateProperty(member, memberSerialization);
-
-            if (property.PropertyType.IsValueType)
-            {
-                // The NullHandlingConverter will ensure that nulls get treated as the default value 
-                // for value types.
-                if (property.MemberConverter == null)
-                {
-                    property.MemberConverter = NullHandlingConverter.Instance;
-                }
-                else
-                {
-                    property.MemberConverter = new NullHandlingConverter(property.MemberConverter);
-                }
-            }
+            this.jsonPropertyCache[member] = property;
 
             return property;
         }
@@ -329,6 +341,8 @@ namespace Microsoft.WindowsAzure.MobileServices
         /// ensure that there is one and only one id property for the type. Also, the id property
         /// should be ignored when it is the default or null value and it should always serialize to JSON
         /// with a lowercase 'id' name.
+        /// 
+        /// This method also checks for and applies and system property attributes.
         /// </remarks>
         /// <param name="type">
         /// The type for which to create the collection of <see cref="JsonProperty"/> instances.
@@ -345,43 +359,43 @@ namespace Microsoft.WindowsAzure.MobileServices
             IList<JsonProperty> properties = base.CreateProperties(type, memberSerialization);
 
             // If this type is for a known table, ensure that it has an id.
-            if (tableNameCache.ContainsKey(type))
+            TypeInfo typeInfo = type.GetTypeInfo();
+            if (this.tableNameCache.ContainsKey(type) || this.tableNameCache.Keys.Any(t => t.GetTypeInfo().IsAssignableFrom(typeInfo)))
             {
                 // Filter out properties that are not read/write
                 properties = properties.Where(p => p.Writable).ToList();
 
-                // Get the Id properties
-                JsonProperty[] idProperties = properties.Where(p => idPropertyNames.Contains(p.PropertyName) && !p.Ignored).ToArray();
+                // Find the id property
+                JsonProperty idProperty = DetermineIdProperty(type, properties);
+                bool isIntegerIdType = MobileServiceSerializer.IsIntegerId(idProperty);
 
-                // Ensure there is one and only one id property
-                if (idProperties.Length > 1)
+                // Create a reverse cache of property to memberInfo to be used locally for validating the type
+                Dictionary<JsonProperty, MemberInfo> memberInfoCache = new Dictionary<JsonProperty, MemberInfo>();
+                foreach (KeyValuePair<MemberInfo, JsonProperty> pair in jsonPropertyCache)
                 {
-                    throw new InvalidOperationException(
-                        string.Format(CultureInfo.InvariantCulture,
-                        Resources.MobileServiceContractResolver_SamePropertyName,
-                        MobileServiceUrlBuilder.IdPropertyName,
-                        type.FullName));
+                    if (pair.Key.DeclaringType.GetTypeInfo().IsAssignableFrom(typeInfo))
+                    {
+                        memberInfoCache.Add(pair.Value, pair.Key);
+                    }
                 }
 
-                if (idProperties.Length < 1)
+                // Set any needed converters and look for system property attributes
+                foreach (JsonProperty property in properties)
                 {
-                    throw new InvalidOperationException(
-                        string.Format(CultureInfo.InvariantCulture,
-                        Resources.MobileServiceContractResolver_MemberNotFound,
-                        MobileServiceUrlBuilder.IdPropertyName,
-                        type.FullName));
+                    SetMemberConverters(property);
+                    ApplySystemPropertyAttributes(property, memberInfoCache[property], isIntegerIdType);
                 }
 
-                // The id property is special. It should always be lowercased and should be ignored when null 
-                // or the default value
-                JsonProperty idProperty = idProperties[0];
-                idProperty.PropertyName = MobileServiceUrlBuilder.IdPropertyName;
-                idProperty.NullValueHandling = NullValueHandling.Ignore;
-                idProperty.DefaultValueHandling = DefaultValueHandling.Ignore;
+                // Determine the system properties from the property names
+                // and add the system properties to the cache
+                if (!isIntegerIdType)
+                {
+                    AddSystemPropertyCacheEntry(type, properties);
+                }
             }
 
             return properties;
-        }
+        }        
 
         /// <summary>
         /// Creates the <see cref="IValueProvider"/> used by the serializer to get and set values from a member.
@@ -392,6 +406,158 @@ namespace Microsoft.WindowsAzure.MobileServices
         {
             // always use the ReflectionValueProvider to make sure our behavior is consistent accross platforms.
             return new ReflectionValueProvider(member);
+        }
+
+        /// <summary>
+        /// Searches over the properties and their names to determine which system properties
+        /// have been applied to the type, and then adds an entry into the system properties cache
+        /// for the type.
+        /// </summary>
+        /// <param name="type">The type.</param>
+        /// <param name="properties">The JsonProperties of the type.</param>
+        private void AddSystemPropertyCacheEntry(Type type, IEnumerable<JsonProperty> properties)
+        {
+            MobileServiceSystemProperties systemProperties = MobileServiceSystemProperties.None;
+            foreach (JsonProperty property in properties)
+            {
+                MobileServiceSystemProperties systemProperty = MobileServiceSystemProperties.None;
+                if (!property.Ignored &&
+                    systemPropertyNameToEnum.TryGetValue(property.PropertyName, out systemProperty))
+                {
+                    // Make sure there is not already a property that has been associated with
+                    // the system property.
+                    if ((systemProperties & systemProperty) == systemProperty)
+                    {
+                        throw new InvalidOperationException(
+                            string.Format(CultureInfo.InvariantCulture,
+                            "Only one member may have the property name '{0}' (regardless of casing) on type '{1}'.",
+                            property.PropertyName,
+                            type.FullName));
+                    }
+                    else
+                    {
+                        systemProperties |= systemProperty;
+                    }
+                }
+            }
+
+            this.systemPropertyCache[type] = systemProperties;
+        }
+
+        /// <summary>
+        /// Determines which of the properties is the id property for the type.
+        /// </summary>
+        /// <param name="type">The type to determine the id property of.</param>
+        /// <param name="properties">The properties of the types.</param>
+        /// <returns>The id property.</returns>
+        private JsonProperty DetermineIdProperty(Type type, IEnumerable<JsonProperty> properties)
+        {
+            // Get the Id properties
+            JsonProperty[] idProperties = properties.Where(p => idPropertyNames.Contains(p.PropertyName) && !p.Ignored).ToArray();
+
+            // Ensure there is one and only one id property
+            if (idProperties.Length > 1)
+            {
+                throw new InvalidOperationException(
+                    string.Format(CultureInfo.InvariantCulture,
+                    "Only one member may have the property name '{0}' (regardless of casing) on type '{1}'.",
+                    MobileServiceSystemColumns.Id,
+                    type.FullName));
+            }
+
+            if (idProperties.Length < 1)
+            {
+                throw new InvalidOperationException(
+                    string.Format(CultureInfo.InvariantCulture,
+                    "No '{0}' member found on type '{1}'.",
+                    MobileServiceSystemColumns.Id,
+                    type.FullName));
+            }
+
+            JsonProperty idProperty = idProperties[0];
+            idProperty.PropertyName = MobileServiceSystemColumns.Id;
+            idProperty.NullValueHandling = NullValueHandling.Ignore;
+            idProperty.DefaultValueHandling = DefaultValueHandling.Ignore;
+            this.idPropertyCache[type] = idProperty;
+
+            return idProperty;
+        }
+
+        /// <summary>
+        /// Given a <see cref="MobileServiceSystemProperties"/> enum value, returns the string value with the 
+        /// correct casing and system property prefix.
+        /// </summary>
+        /// <param name="systemProperty">The system property.</param>
+        /// <returns>A string of the system property with the correct casing and system property prefix.</returns>
+        private static string GetSystemPropertyString(MobileServiceSystemProperties systemProperty)
+        {
+            string enumAsString = systemProperty.ToString();
+            char firstLetterAsLower = char.ToLowerInvariant(enumAsString[0]);
+            return string.Format("{0}{1}{2}", MobileServiceSerializer.SystemPropertyPrefix, firstLetterAsLower, enumAsString.Substring(1));
+        }
+
+        /// <summary>
+        /// Applies the system property attribute to the property by renaming the property to the
+        /// system property name.
+        /// </summary>
+        /// <param name="property">The property.</param>
+        /// <param name="member">The <see cref="MemberInfo"/> that corresponds to the property.</param>
+        /// <param name="isIntegerIdType">Indicates if the type that the property is on, has an integer id type or not.</param>
+        private static void ApplySystemPropertyAttributes(JsonProperty property, MemberInfo member, bool isIntegerIdType)
+        {
+            // Check for system property attributes
+            MobileServiceSystemProperties systemProperties = MobileServiceSystemProperties.None;
+
+            foreach (object attribute in member.GetCustomAttributes(true))
+            {
+                ISystemPropertyAttribute systemProperty = attribute as ISystemPropertyAttribute;
+                if (systemProperty != null)
+                {
+                    if (isIntegerIdType)
+                    {
+                        throw new InvalidOperationException(
+                            string.Format(CultureInfo.InvariantCulture,
+                            "The type '{0}' has an integer id member and therefore can not have any members with the system property attribute '{1}'.",
+                            member.DeclaringType.FullName,
+                            systemProperty.SystemProperty));
+                    }
+
+                    if (systemProperties != MobileServiceSystemProperties.None)
+                    {
+                        throw new InvalidOperationException(
+                            string.Format(CultureInfo.InvariantCulture,
+                            "A member can only have one system property attribute. The member '{0}' on type '{1}' has system property attributes '{2}' and '{3}'.",
+                            member.Name,
+                            member.DeclaringType.FullName,
+                            systemProperty.SystemProperty,
+                            systemProperties));
+                    }
+
+                    property.PropertyName = GetSystemPropertyString(systemProperty.SystemProperty);
+                    systemProperties = systemProperty.SystemProperty;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Sets the member converters on the property if the property is a value type.
+        /// </summary>
+        /// <param name="property">The property to add the member converters to.</param>
+        private static void SetMemberConverters(JsonProperty property)
+        {
+            if (property.PropertyType.GetTypeInfo().IsValueType)
+            {
+                // The NullHandlingConverter will ensure that nulls get treated as the default value 
+                // for value types.
+                if (property.MemberConverter == null)
+                {
+                    property.MemberConverter = NullHandlingConverter.Instance;
+                }
+                else
+                {
+                    property.MemberConverter = new NullHandlingConverter(property.MemberConverter);
+                }
+            }
         }
 
         /// <summary>
@@ -434,7 +600,7 @@ namespace Microsoft.WindowsAzure.MobileServices
             /// </returns>
             public override bool CanConvert(Type objectType)
             {
-                return objectType.IsValueType || (inner != null && inner.CanConvert(objectType));
+                return objectType.GetTypeInfo().IsValueType || (inner != null && inner.CanConvert(objectType));
             }
 
             /// <summary>
@@ -458,14 +624,14 @@ namespace Microsoft.WindowsAzure.MobileServices
             /// </returns>
             public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
             {
-                if(inner != null && inner.CanConvert(objectType) && inner.CanRead)
+                if (inner != null && inner.CanConvert(objectType) && inner.CanRead)
                 {
                     return inner.ReadJson(reader, objectType, existingValue, serializer);
                 }
                 else if (reader.TokenType == JsonToken.Null)
                 {
                     //create default values if null is not a valid value
-                    if (objectType.IsValueType)
+                    if (objectType.GetTypeInfo().IsValueType)
                     {
                         //create default value
                         return Activator.CreateInstance(objectType);

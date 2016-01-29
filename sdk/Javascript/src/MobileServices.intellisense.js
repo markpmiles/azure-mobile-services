@@ -30,7 +30,7 @@ intellisense.annotate(WindowsAzure.MobileServiceClient.prototype, {
         /// </summary>
         /// <param name="provider" type="String" mayBeNull="true">
         /// The name of the identity provider, which instructs Mobile Services which provider to use for authentication. 
-        /// The following values are supported: 'facebook', 'twitter', 'google', 
+        /// The following values are supported: 'facebook', 'twitter', 'google', 'windowsazureactivedirectory' (can also use 'aad')
         /// or 'microsoftaccount'. If no provider is specified, the 'token' parameter
         /// is considered a Microsoft Account authentication token. If a provider is specified, 
         /// the 'token' parameter is considered a provider-specific authentication token.
@@ -42,7 +42,7 @@ intellisense.annotate(WindowsAzure.MobileServiceClient.prototype, {
         /// <param name="useSingleSignOn" type="Boolean" mayBeNull="true">
         /// Only applies to Windows 8 clients.  Will be ignored on other platforms.
         /// Indicates if single sign-on should be used. Single sign-on requires that the 
-        /// application's Package SID be registered with the Windows Azure Mobile Service, 
+        /// application's Package SID be registered with the Microsoft Azure Mobile Service, 
         /// but it provides a better experience as HTTP cookies are supported so that users 
         /// do not have to login in everytime the application is launched.
         /// </param>

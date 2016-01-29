@@ -9,16 +9,17 @@
 #pragma mark * Query String Constants
 
 
-NSString *const topParameter = @"$top";
-NSString *const skipParameter = @"$skip";
-NSString *const selectParameter = @"$select";
-NSString *const orderByParameter = @"$orderby";
-NSString *const orderByAscendingFormat = @"%@ asc";
-NSString *const orderByDescendingFormat = @"%@ desc";
-NSString *const filterParameter = @"$filter";
-NSString *const inlineCountParameter = @"$inlinecount";
-NSString *const inlineCountAllPage = @"allpages";
-NSString *const inlineCountNone = @"none";
+static NSString *const topParameter = @"$top";
+static NSString *const skipParameter = @"$skip";
+static NSString *const selectParameter = @"$select";
+static NSString *const orderByParameter = @"$orderby";
+static NSString *const orderByAscendingFormat = @"%@ asc";
+static NSString *const orderByDescendingFormat = @"%@ desc";
+static NSString *const filterParameter = @"$filter";
+static NSString *const inlineCountParameter = @"$inlinecount";
+static NSString *const inlineCountAllPage = @"allpages";
+
+
 #pragma mark * MSURLBuilder Implementation
 
 
@@ -27,9 +28,43 @@ NSString *const inlineCountNone = @"none";
 
 #pragma mark * Public URL Builder Methods
 
++ (NSURL *) addTableSystemProperties:(MSTable *)table toURL:(NSURL *)url
+{
+    if (table.systemProperties == MSSystemPropertyNone) {
+        return url;
+    }
+
+    if(url.query != nil && [url.query rangeOfString:@"__systemProperties" options:NSCaseInsensitiveSearch].location != NSNotFound) {
+        return url;
+    }
+                               
+    NSString *value = @"";
+    if(table.systemProperties == MSSystemPropertyAll) {
+        value = encodeToPercentEscapeString(@"*");
+    } else {
+        NSMutableArray *properties = [NSMutableArray array];
+        if (table.systemProperties & MSSystemPropertyCreatedAt) {
+            [properties addObject:MSSystemColumnCreatedAt];
+        }
+        if (table.systemProperties & MSSystemPropertyUpdatedAt) {
+            [properties addObject:MSSystemColumnUpdatedAt];
+        }
+        if (table.systemProperties & MSSystemPropertyDeleted) {
+            [properties addObject:MSSystemColumnDeleted];
+        }
+        if (table.systemProperties & MSSystemPropertyVersion) {
+            [properties addObject:MSSystemColumnVersion];
+        }
+        // Join the properties with "%2C" which is URL Friendly
+        value = [properties componentsJoinedByString:@"%2C"];
+    }
+    
+    return [MSURLBuilder URLByAppendingQueryString:[@"__systemProperties=" stringByAppendingString:value] toURL:url];
+}
 
 +(NSURL *) URLForTable:(MSTable *)table
-        parameters:(NSDictionary *)parameters
+            parameters:(NSDictionary *)parameters
+                 query:( NSString *)query
                orError:(NSError **)error
 {
     NSURL *url = nil;
@@ -39,17 +74,30 @@ NSString *const inlineCountNone = @"none";
         
         // Create the table path
         NSString *tablePath = [NSString stringWithFormat:@"tables/%@", table.name];
-
+        
         // Append it to the application URL; Don't percent encode the tablePath
         // because URLByAppending will percent encode for us
         url = [table.client.applicationURL URLByAppendingPathComponent:tablePath];
         
+        // Add on the querystring now
+        url = [MSURLBuilder URLByAppendingQueryString:query toURL:url];
+            
         // Add the query parameters if any
         url = [MSURLBuilder URLByAppendingQueryParameters:parameters
-                                                         toURL:url];
+                                                    toURL:url];
+        
+        // Check if we should add in system properties
+        url = [MSURLBuilder addTableSystemProperties:table toURL:url];
     }
     
     return url;
+}
+
++(NSURL *) URLForTable:(MSTable *)table
+        parameters:(NSDictionary *)parameters
+               orError:(NSError **)error
+{
+    return [MSURLBuilder URLForTable:table parameters:parameters query:nil orError:error];
 }
 
 +(NSURL *) URLForTable:(MSTable *)table
@@ -59,7 +107,7 @@ NSString *const inlineCountNone = @"none";
 {        
     // Get the URL for the table
     NSURL *url = [self URLForTable:table
-                    parameters:parameters
+                        parameters:parameters
                            orError:error];
     
     // Add the itemId; NSURL will do the right thing and account for the
@@ -75,9 +123,7 @@ NSString *const inlineCountNone = @"none";
 {
     // Get the URL for the table; no need to pass in the error parameter because
     // only user-parameters can cause an error
-    NSURL *url = [self URLForTable:table parameters:nil orError:nil];
-    
-    return [MSURLBuilder URLByAppendingQueryString:query toURL:url];
+    return [self URLForTable:table parameters:nil query:query orError:nil];
 }
 
 +(NSURL *)URLForApi:(MSClient *)client
@@ -152,15 +198,15 @@ NSString *const inlineCountNone = @"none";
             
             // Add the $top parameter
             if (query.fetchLimit >= 0) {
-                NSString *topValue = [NSString stringWithFormat:@"%u",
-                                      query.fetchLimit];
+                NSString *topValue = [NSString stringWithFormat:@"%ld",
+                                      (long)query.fetchLimit];
                 [queryParameters setValue:topValue forKey:topParameter];
             }
             
             // Add the $skip parameter
             if (query.fetchOffset >= 0) {
-                NSString *skipValue = [NSString stringWithFormat:@"%u",
-                                       query.fetchOffset];
+                NSString *skipValue = [NSString stringWithFormat:@"%ld",
+                                       (long)query.fetchOffset];
                 [queryParameters setValue:skipValue forKey:skipParameter];
             }
             
@@ -187,11 +233,11 @@ NSString *const inlineCountNone = @"none";
             }
             
             // Add the $inlineCount parameter
-            NSString *includeTotalCountValue = query.includeTotalCount ?
-            inlineCountAllPage :
-            inlineCountNone;
-            [queryParameters setValue:includeTotalCountValue
-                               forKey:inlineCountParameter];
+            
+            if (query.includeTotalCount) {
+                [queryParameters setValue:inlineCountAllPage
+                                 forKey:inlineCountParameter];
+            }
             
             // Add the user parameters
             if (query.parameters) {
@@ -207,17 +253,15 @@ NSString *const inlineCountNone = @"none";
 
 
 #pragma mark * Private Methods
-
-
 // This is for 'strict' URL encoding that will encode even reserved URL
 // characters.  It should be used only on URL pieces, not full URLs.
 NSString* encodeToPercentEscapeString(NSString *string) {
-    return (__bridge_transfer NSString *)
-    CFURLCreateStringByAddingPercentEscapes(NULL,
-                                            (CFStringRef) string,
-                                            NULL,
-                                            (CFStringRef) @"!*;:@&=+/?%#[]",
-                                            kCFStringEncodingUTF8);
+    NSMutableCharacterSet *strictSet = [[NSCharacterSet URLQueryAllowedCharacterSet] mutableCopy];
+    
+    // We also want these encoded, regardless of if they are allowed in a query
+    [strictSet removeCharactersInString:@"!*;:@&=+/?%#[]"];
+
+    return [string stringByAddingPercentEncodingWithAllowedCharacters:strictSet];
 }
 
 +(NSString *) queryStringFromParameters:(NSDictionary *)queryParameters
@@ -225,24 +269,34 @@ NSString* encodeToPercentEscapeString(NSString *string) {
     // Iterate through the parameters to build the query string as key=value
     // pairs seperated by '&'
     NSMutableString *queryString = [NSMutableString string];
-    for (NSString* key in [queryParameters allKeys]){
-        
-        // Get the paremeter name and value
-        NSString *value = [[queryParameters objectForKey:key] description];
+    for (NSString* key in [queryParameters allKeys]) {
         NSString *name = [key description];
         
-        // URL Encode the parameter name and the value
-        NSString *encodedValue = encodeToPercentEscapeString(value);
-        NSString *encodedName = encodeToPercentEscapeString(name);
-
-        if (queryString.length > 0) {
-            [queryString appendString:@"&"];
+        // Get the paremeter name and value
+        id value = [queryParameters objectForKey:key];
+        if ([value isKindOfClass:[NSArray class]]) {
+            for (id arrayValue in value) {
+                [MSURLBuilder appendParameterName:name andValue:[arrayValue description] toQueryString:queryString];
+            }
+        } else {
+            [MSURLBuilder appendParameterName:name andValue:[value description] toQueryString:queryString];
         }
-        
-        [queryString appendFormat:@"%@=%@", encodedName, encodedValue];
     }
     
     return queryString;
+}
+
++(void) appendParameterName:(NSString *)name andValue:(NSString *)value toQueryString:(NSMutableString *)queryString
+{
+    // URL Encode the parameter name and the value
+    NSString *encodedValue = encodeToPercentEscapeString(value);
+    NSString *encodedName = encodeToPercentEscapeString(name);
+
+    if (queryString.length > 0) {
+        [queryString appendFormat:@"&%@=%@", encodedName, encodedValue];
+    } else {
+        [queryString appendFormat:@"%@=%@", encodedName, encodedValue];
+    }
 }
 
 +(NSURL *) URLByAppendingQueryParameters:(NSDictionary *)queryParameters

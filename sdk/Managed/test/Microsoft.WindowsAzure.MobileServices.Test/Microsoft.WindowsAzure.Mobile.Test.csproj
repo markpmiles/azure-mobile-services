@@ -2,7 +2,8 @@
 <Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
-    <MinimumVisualStudioVersion>10.0</MinimumVisualStudioVersion>
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <MinimumVisualStudioVersion>12.0</MinimumVisualStudioVersion>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProjectGuid>{D8BBC92A-B213-463B-911D-3A106F91D5F9}</ProjectGuid>
@@ -10,8 +11,8 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Microsoft.WindowsAzure.MobileServices.Test</RootNamespace>
     <AssemblyName>Microsoft.WindowsAzure.Mobile.Test</AssemblyName>
-    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
-    <TargetFrameworkProfile>Profile104</TargetFrameworkProfile>
+    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <TargetFrameworkProfile>Profile259</TargetFrameworkProfile>
     <FileAlignment>512</FileAlignment>
     <ProjectTypeGuids>{786C830F-07A1-408B-BD7F-6EE04809D6DB};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
     <SolutionDir Condition="$(SolutionDir) == '' Or $(SolutionDir) == '*Undefined*'">..\..\</SolutionDir>
@@ -26,6 +27,9 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <RunCodeAnalysis>true</RunCodeAnalysis>
+    <CodeAnalysisAdditionalOptions>
+     /assemblyCompareMode:StrongNameIgnoringVersion      
+    </CodeAnalysisAdditionalOptions>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -37,19 +41,38 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- A reference to the entire .NET Framework is automatically included -->
+    <None Include="packages.config" />
+    <Compile Include="SerializationTypes\JObjectTypes.cs" />
+    <Compile Include="SerializationTypes\TypeWithConstructor.cs" />
+    <Compile Include="UnitTests\Http\HttpUtilityTests.cs" />
+    <Compile Include="UnitTests\OData\ODataExpressionParser.Test.cs" />
+    <Compile Include="UnitTests\Push\LocalStorageMananger.Test.cs" />
+    <Compile Include="UnitTests\Table\MobileServiceObjectReaderTests.cs" />
+    <Compile Include="UnitTests\Table\Sync\MobileServiceSyncContext.Test.cs" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AssertEx.cs" />
     <Compile Include="FunctionalTests\DataSourceTest.cs" />
+    <Compile Include="FunctionalTests\Table\MobileServiceTableTest.cs" />
+    <Compile Include="Mocks\MobileServiceSyncHandlerMock.cs" />
+    <Compile Include="Mocks\MobileServiceLocalStoreMock.cs" />
     <Compile Include="Mocks\MobileServiceTableQueryMock.cs" />
     <Compile Include="SerializationTypes\ComplexType.cs" />
     <Compile Include="SerializationTypes\ConverterType.cs" />
+    <Compile Include="SerializationTypes\SystemPropertyTypes.cs" />
     <Compile Include="SerializationTypes\InterfacePropertyType.cs" />
     <Compile Include="SerializationTypes\TestConverter.cs" />
+    <Compile Include="TestData\IdTestData.cs" />
+    <Compile Include="TestData\SystemPropertiesTestData.cs" />
+    <Compile Include="TestPlatform\IPushTestUtility.cs" />
+    <Compile Include="TestPlatform\ITestPlatform.cs" />
+    <Compile Include="TestPlatform\MissingPushTestUtility.cs" />
+    <Compile Include="TestPlatform\MissingTestPlatform.cs" />
+    <Compile Include="TestPlatform\TestPlatform.cs" />
     <Compile Include="UnitTests\Collections\MobileServiceCollection.Test.cs" />
     <Compile Include="UnitTests\HttpHandlers\TestHttpHandler.cs" />
     <Compile Include="FunctionalTests\BloggingTest.cs" />
     <Compile Include="FunctionalTests\Book.cs" />
-    <Compile Include="FunctionalTests\DataTypesTest.cs" />
     <Compile Include="FunctionalTests\DateTests.cs" />
     <Compile Include="FunctionalTests\FunctionalTestBase.cs" />
     <Compile Include="FunctionalTests\QueryingTest.cs" />
@@ -76,16 +99,22 @@
     <Compile Include="SerializationTypes\SerializationTypeUtility.cs" />
     <Compile Include="SerializationTypes\SimpleTreeType.cs" />
     <Compile Include="UnitTests\HttpHandlers\ComplexDelegatingHandler.cs" />
+    <Compile Include="UnitTests\MobileServiceFeatures.Test.cs" />
     <Compile Include="UnitTests\MobileServiceClient.Test.cs" />
+    <Compile Include="UnitTests\Authentication\MobileServiceTokenAuthenticationTests.cs" />
+    <Compile Include="UnitTests\Push\PushHttpClient.Test.cs" />
     <Compile Include="UnitTests\Table\MobileServiceTable.Test.cs" />
     <Compile Include="UnitTests\MobileServiceUser.Test.cs" />
     <Compile Include="UnitTests\MobileServiceUrlBuilder.Test.cs" />
     <Compile Include="UnitTests\Table\MobileServiceTable.Generic.Test.cs" />
+    <Compile Include="UnitTests\Table\Query\MemberInfoKey.Test.cs" />
     <Compile Include="UnitTests\Table\Query\ZumoQuery.Test.cs" />
     <Compile Include="UnitTests\Table\Serialization\MobileServiceIsoDateTimeConverter.Test.cs" />
     <Compile Include="UnitTests\Table\Serialization\MobileServiceContractResolver.Test.cs" />
     <Compile Include="UnitTests\Table\Serialization\MobileServiceSerializer.Test.cs" />
     <Compile Include="UnitTests\Table\Serialization\MobileServicePrecisionCheckConverter.Test.cs" />
+    <Compile Include="UnitTests\Table\Sync\MobileServiceSyncTable.Generic.Test.cs" />
+    <Compile Include="UnitTests\Table\Sync\MobileServiceSyncTable.Test.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Microsoft.WindowsAzure.MobileServices\Microsoft.WindowsAzure.Mobile.csproj">
@@ -98,38 +127,25 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <Reference Include="Microsoft.Threading.Tasks">
-      <HintPath>..\..\packages\Microsoft.Bcl.Async.1.0.16\lib\portable-net40+sl4+win8+wp71\Microsoft.Threading.Tasks.dll</HintPath>
-    </Reference>
-    <Reference Include="Microsoft.Threading.Tasks.Extensions">
-      <HintPath>..\..\packages\Microsoft.Bcl.Async.1.0.16\lib\portable-net40+sl4+win8+wp71\Microsoft.Threading.Tasks.Extensions.dll</HintPath>
-    </Reference>
     <Reference Include="Newtonsoft.Json">
-      <HintPath>..\..\packages\Newtonsoft.Json.5.0.5\lib\portable-net40+sl4+wp7+win8\Newtonsoft.Json.dll</HintPath>
+      <HintPath>..\..\packages\Newtonsoft.Json.6.0.4\lib\portable-net45+wp80+win8+wpa81\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="System.Net.Http">
-      <HintPath>..\..\packages\Microsoft.Net.Http.2.1.10\lib\portable-net40+sl4+win8+wp71\System.Net.Http.dll</HintPath>
+      <HintPath>..\..\packages\Microsoft.Net.Http.2.2.28\lib\portable-net40+sl4+win8+wp71+wpa81\System.Net.Http.dll</HintPath>
     </Reference>
     <Reference Include="System.Net.Http.Extensions">
-      <HintPath>..\..\packages\Microsoft.Net.Http.2.1.10\lib\portable-net40+sl4+win8+wp71\System.Net.Http.Extensions.dll</HintPath>
+      <HintPath>..\..\packages\Microsoft.Net.Http.2.2.28\lib\portable-net40+sl4+win8+wp71+wpa81\System.Net.Http.Extensions.dll</HintPath>
     </Reference>
     <Reference Include="System.Net.Http.Primitives">
-      <HintPath>..\..\packages\Microsoft.Net.Http.2.1.10\lib\portable-net40+sl4+win8+wp71\System.Net.Http.Primitives.dll</HintPath>
+      <HintPath>..\..\packages\Microsoft.Net.Http.2.2.28\lib\portable-net40+sl4+win8+wp71+wpa81\System.Net.Http.Primitives.dll</HintPath>
     </Reference>
-    <Reference Include="System.Runtime">
-      <HintPath>..\..\packages\Microsoft.Bcl.1.0.19\lib\portable-net40+sl4+win8+wp71\System.Runtime.dll</HintPath>
-    </Reference>
-    <Reference Include="System.Threading.Tasks">
-      <HintPath>..\..\packages\Microsoft.Bcl.1.0.19\lib\portable-net40+sl4+win8+wp71\System.Threading.Tasks.dll</HintPath>
-    </Reference>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="app.config" />
-    <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\Portable\$(TargetFrameworkVersion)\Microsoft.Portable.CSharp.targets" />
-  <Import Project="$(SolutionDir)\.nuget\nuget.targets" />
-  <Import Project="..\..\packages\Microsoft.Bcl.Build.1.0.5\tools\Microsoft.Bcl.Build.targets" />
+  <Import Project="..\..\packages\Microsoft.Bcl.Build.1.0.14\tools\Microsoft.Bcl.Build.targets" Condition="Exists('..\..\packages\Microsoft.Bcl.Build.1.0.14\tools\Microsoft.Bcl.Build.targets')" />
+  <Target Name="EnsureBclBuildImported" BeforeTargets="BeforeBuild" Condition="'$(BclBuildImported)' == ''">
+    <Error Condition="!Exists('..\..\packages\Microsoft.Bcl.Build.1.0.14\tools\Microsoft.Bcl.Build.targets')" Text="This project references NuGet package(s) that are missing on this computer. Enable NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=317567." HelpKeyword="BCLBUILD2001" />
+    <Error Condition="Exists('..\..\packages\Microsoft.Bcl.Build.1.0.14\tools\Microsoft.Bcl.Build.targets')" Text="The build restored NuGet packages. Build the project again to include these packages in the build. For more information, see http://go.microsoft.com/fwlink/?LinkID=317568." HelpKeyword="BCLBUILD2002" />
+  </Target>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
   <Target Name="BeforeBuild">

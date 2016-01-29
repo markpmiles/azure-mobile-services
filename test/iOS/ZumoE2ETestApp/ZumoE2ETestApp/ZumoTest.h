@@ -11,8 +11,6 @@
 typedef void (^ZumoTestCompletion)(BOOL testPassed);
 typedef void (^ZumoTestExecution)(ZumoTest *test, UIViewController *viewController, ZumoTestCompletion completion);
 
-typedef enum { TSNotRun, TSRunning, TSFailed, TSPassed } TestStatus;
-
 @interface ZumoTest : NSObject
 {
     NSMutableArray *logs;
@@ -24,6 +22,10 @@ typedef enum { TSNotRun, TSRunning, TSFailed, TSPassed } TestStatus;
 @property (nonatomic, copy) ZumoTestExecution execution;
 @property (nonatomic) TestStatus testStatus;
 @property (nonatomic, strong) NSMutableDictionary *propertyBag;
+@property (nonatomic) BOOL canRunUnattended;
+@property (nonatomic, copy) NSDate *startTime;
+@property (nonatomic, copy) NSDate *endTime;
+@property (nonatomic, strong) NSMutableArray *requiredFeatures;
 
 + (ZumoTest *)createTestWithName:(NSString *)name andExecution:(ZumoTestExecution)steps;
 
@@ -31,5 +33,8 @@ typedef enum { TSNotRun, TSRunning, TSFailed, TSPassed } TestStatus;
 - (void)startExecutingFrom:(UIViewController *)currentViewController;
 - (void)addLog:(NSString *)text;
 - (NSArray *)getLogs;
+- (void)addRequiredFeature:(NSString *)featureName;
+
++ (NSString *)testStatusToString:(TestStatus)status;
 
 @end

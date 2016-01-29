@@ -31,16 +31,16 @@ exports.isNull = function (value) {
 exports.isNullOrZero = function (value) {
     /// <summary>
     /// Gets a value indicating whether the provided value is null (or
-    /// undefined) or zero.
+    /// undefined) or zero / empty string
     /// </summary>
     /// <param name="value" type="Object" mayBeNull="true">
     /// The value to check.
     /// </param>
     /// <returns type="Boolean">
-    /// A value indicating whether the provided value is null (or undefined) or zero.
+    /// A value indicating whether the provided value is null (or undefined) or zero or empty string.
     /// </returns>
 
-    return value === null || value === undefined || value === 0;
+    return value === null || value === undefined || value === 0 || value === '';
 };
 
 exports.isNullOrEmpty = function (value) {
@@ -153,6 +153,38 @@ exports.isObject = function (value) {
     return _.isNull(value) || (typeof value === 'object' && !_.isDate(value));
 };
 
+exports.isValidId = function (value) {
+    /// <summary>
+    /// Determine if a value is an acceptable id for use by the mobile service
+    /// </summary>
+    /// <param name="value" type="Object">The value to check.</param>
+    /// <returns type="boolean">
+    /// True if the value is a string or number, meeting all criteria, or false othwerise.
+    /// </returns>
+    if (_.isNullOrZero(value)) {
+        return false;
+    }
+
+    if (_.isString(value)) {
+        // Strings must contain at least one non whitespace character
+        if (value.length === 0 || value.length > 255 || value.trim().length === 0) {
+            return false;
+        }
+
+        var ex = /[+"\/?`\\]|[\u0000-\u001F]|[\u007F-\u009F]|^\.{1,2}$/;
+        if (value.match(ex) !== null) {
+            return false;
+        }
+
+        return true;
+
+    } else if (_.isNumber(value)) {
+        return value > 0;
+    }
+
+    return false;
+};
+
 exports.isString = function (value) {
     /// <summary>
     /// Determine if a value is a string.
@@ -220,27 +252,30 @@ exports.fromJson = function (value) {
     /// <param name="value" type="String">The value to convert.</param>
     /// <returns type="Object">The value as an object.</returns>
 
-    Validate.isString(value, 'value');
-
-    // We're wrapping this so we can hook the process and perform custom JSON
-    // conversions
-    return JSON.parse(
-        value,
-        function (k, v) {
-            // Try to convert the value as a Date
-            if (_.isString(v) && !_.isNullOrEmpty(v)) {
-                var date = exports.tryParseIsoDateString(v);
-                if (!_.isNull(date)) {
-                    return date;
+    var jsonValue = null;
+    if (!_.isNullOrEmpty(value)) {
+        // We're wrapping this so we can hook the process and perform custom JSON
+        // conversions
+        jsonValue = JSON.parse(
+            value,
+            function (k, v) {
+                // Try to convert the value as a Date
+                if (_.isString(v) && !_.isNullOrEmpty(v)) {
+                    var date = exports.tryParseIsoDateString(v);
+                    if (!_.isNull(date)) {
+                        return date;
+                    }
                 }
-            }
 
-            // TODO: Convert geolocations once they're supported
-            // TODO: Expose the ability for developers to convert custom types
-            
-            // Return the original value if we couldn't do anything with it
-            return v;
-        });
+                // TODO: Convert geolocations once they're supported
+                // TODO: Expose the ability for developers to convert custom types
+
+                // Return the original value if we couldn't do anything with it
+                return v;
+            });
+    }
+
+    return jsonValue;
 };
 
 exports.createUniqueInstallationId = function () {
@@ -461,6 +496,18 @@ exports.url = {
         } else {
             return path + '?' + exports.trimStart(queryString, '?');
         }
+    },
+
+    isAbsoluteUrl: function (url) {
+        /// <summary>
+        /// Currently just a simple check if the url begins with http:// or https:/
+        /// </summary>
+        if (_.isNullOrEmpty(url)) {
+            return false;
+        }
+
+        var start = url.substring(0, 7).toLowerCase();
+        return (start  == "http://" || start == "https:/");
     }
 };
 
@@ -500,17 +547,33 @@ exports.createError = function (exceptionOrMessage, request) {
         } else {
             // Try to pull out an error message from the response before
             // defaulting to the status
+            var isText = false;
+            if (request.getResponseHeader) {
+                var contentType = request.getResponseHeader('Content-Type');
+                if (contentType) {
+                    isText = contentType.toLowerCase().indexOf("text") >= 0;
+                }
+            }
+
             try {
                 var response = JSON.parse(request.responseText);
-                error.message =
-                    response.error ||
-                    response.description ||
-                    request.statusText ||
-                    Platform.getResourceString("Extensions_DefaultErrorMessage");
+                if (typeof response === 'string') {
+                    error.message = response;
+                } else {
+                    error.message =
+                        response.error ||
+                        response.description ||
+                        request.statusText ||
+                        Platform.getResourceString("Extensions_DefaultErrorMessage");
+                }
             } catch (ex) {
-                error.message =
-                    request.statusText ||
-                    Platform.getResourceString("Extensions_DefaultErrorMessage");
+                if (isText) {
+                    error.message = request.responseText;
+                } else {
+                    error.message =
+                        request.statusText ||
+                        Platform.getResourceString("Extensions_DefaultErrorMessage");
+                }
             }
         }
     } else if (_.isString(exceptionOrMessage) && !_.isNullOrEmpty(exceptionOrMessage)) {
